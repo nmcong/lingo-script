@@ -1102,7 +1102,16 @@ function setupLazyLoading(containerSelector, selector, config) {
 let autoPlayObserver = null;
 
 function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, enableBubbleText = true) {
-  if (autoPlayObserver) { autoPlayObserver.disconnect(); autoPlayObserver = null; }
+  // Cleanup existing observer and polling
+  if (autoPlayObserver) { 
+    autoPlayObserver.disconnect(); 
+    autoPlayObserver = null; 
+  }
+  if (window.lingoPollingIntervals) {
+    window.lingoPollingIntervals.forEach(id => clearInterval(id));
+    window.lingoPollingIntervals = [];
+  }
+  
   if (!containerSelector) return;
 
   const container = document.querySelector(containerSelector);
@@ -1113,14 +1122,27 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
 
   autoPlayObserver = new MutationObserver((mutations) => {
     // Always run observer for bubble message sync, TTS only when isAutoPlay = true
-    mutations.forEach(({ type, attributeName, target }) => {
+    mutations.forEach(({ type, attributeName, target, oldValue }) => {
       if (type === 'attributes' && (attributeName === 'class' || attributeName === 'data-purpose')) {
-        console.log('[LingoScript] Mutation detected:', attributeName, 'on', target.tagName);
-        // Check if element is active (via class or data-purpose)
+        // Check if element is now active
         const isActive = (activeClass && target.classList.contains(activeClass)) || 
                         target.dataset.purpose === 'transcript-cue-active';
         
         if (!isActive) return;
+        
+        // For data-purpose, check if it JUST became active (prevent duplicate triggers)
+        if (attributeName === 'data-purpose') {
+          if (oldValue === 'transcript-cue-active') {
+            // Already was active, skip
+            return;
+          }
+          console.log('[LingoScript] data-purpose changed to transcript-cue-active');
+        }
+        
+        // For class changes, log for debugging
+        if (attributeName === 'class' && activeClass) {
+          console.log('[LingoScript] Active class detected:', activeClass);
+        }
 
         // Find translated element (could be target itself or a child)
         let translatedElement = null;
@@ -1181,9 +1203,61 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
   autoPlayObserver.observe(container, {
     attributes: true,
     subtree: true,
-    attributeFilter: ['class', 'data-purpose']
+    attributeFilter: ['class', 'data-purpose'],
+    attributeOldValue: true // Track old values to detect actual changes
   });
-  console.log('[LingoScript] Auto-play observer active.');
+  console.log('[LingoScript] Auto-play observer active on container:', containerSelector);
+  
+  // Fallback: Also poll for active cue every 500ms
+  let lastActiveText = '';
+  const pollInterval = setInterval(() => {
+    // Find active cue element
+    let activeCue = null;
+    
+    // Method 1: By data-purpose
+    activeCue = container.querySelector('[data-purpose="transcript-cue-active"]');
+    
+    // Method 2: By class (if activeClass provided)
+    if (!activeCue && activeClass) {
+      activeCue = container.querySelector(`.${activeClass}`);
+    }
+    
+    if (activeCue) {
+      // Find translated text in active cue
+      let translatedText = null;
+      const cueText = activeCue.querySelector('[data-purpose="cue-text"]');
+      
+      if (cueText && cueText.dataset.lingoTranslated) {
+        translatedText = cueText.dataset.lingoText;
+      } else if (activeCue.dataset.lingoTranslated) {
+        translatedText = activeCue.dataset.lingoText;
+      }
+      
+      // Only update if text changed
+      if (translatedText && translatedText !== lastActiveText) {
+        console.log('[LingoScript] Polling detected new active cue:', translatedText.slice(0, 50) + '...');
+        lastActiveText = translatedText;
+        
+        // Show in bubble message
+        const bubble = floatingBubble || createFloatingBubble();
+        const panel = bubble.querySelector('#lingo-control-panel');
+        if (panel) panel.style.display = 'none';
+        showBubbleMessage(translatedText, 0, true);
+        
+        // Overlay and TTS
+        if (enableOverlay) showOverlaySubtitle(translatedText);
+        if (isAutoPlay) {
+          chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
+            speakText(translatedText, cfg);
+          });
+        }
+      }
+    }
+  }, 500);
+  
+  // Store interval ID for cleanup
+  if (!window.lingoPollingIntervals) window.lingoPollingIntervals = [];
+  window.lingoPollingIntervals.push(pollInterval);
 }
 
 // =============================================================================
