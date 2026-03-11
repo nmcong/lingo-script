@@ -477,6 +477,12 @@ function showBubbleMessage(text, duration = 3000, isTranscript = false) {
   const message = document.getElementById('lingo-bubble-message');
   if (!message) return;
   
+  // Skip if already showing same text (avoid flickering)
+  const isAlreadyShowing = message.style.display === 'block' && 
+                          message.style.opacity === '1' && 
+                          message.textContent === text;
+  if (isAlreadyShowing) return;
+  
   // Style differently for transcript vs status messages
   if (isTranscript) {
     message.style.background = '#2c3e50';
@@ -836,6 +842,12 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
     el.dataset.lingoTranslated = 'true';
     el.dataset.lingoText = item.text;
     el.title = item.fromCache ? '💾 Từ cache' : '✨ Vừa dịch';
+
+    // Show translated text in bubble message if autoplay is not active
+    // (if autoplay is active, it will be shown by the autoPlayObserver)
+    if (floatingBubble && !isAutoPlay) {
+      showBubbleMessage(item.text, 0, true);
+    }
 
     // Add speaker button if not exists
     if (!existingSpeaker) {
