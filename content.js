@@ -67,6 +67,9 @@ function autoDetectPlatform() {
 // Translation state
 let isTranslating = false;
 let shouldCancel = false;
+let isPaused = false;
+let currentBatchIndex = 0;
+let totalBatches = 0;
 
 async function translateBatch(batch, config) {
   return new Promise((resolve, reject) => {
@@ -189,11 +192,304 @@ function collectAndChunk(selector, chunkSize = 20) {
     if (text && !el.dataset.lingoTranslated) {
       textData.push({ id: i, text });
       nodeMap.set(i, el);
+      // Add pending badge
+      addSegmentBadge(el, 'pending');
     }
   });
 
   console.log(`[LingoScript] ${textData.length} segments found, ${chunkArray(textData, chunkSize).length} batches.`);
   return chunkArray(textData, chunkSize);
+}
+
+// =============================================================================
+// FLOATING BUBBLE CONTROL CENTER
+// =============================================================================
+
+let floatingBubble = null;
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+
+function createFloatingBubble() {
+  if (floatingBubble) return floatingBubble;
+
+  // Main bubble container
+  floatingBubble = document.createElement('div');
+  floatingBubble.id = 'lingo-floating-bubble';
+  floatingBubble.style.cssText = [
+    'position:fixed',
+    'bottom:80px',
+    'right:30px',
+    'width:56px',
+    'height:56px',
+    'border-radius:50%',
+    'background:linear-gradient(135deg, #e94560, #c73652)',
+    'box-shadow:0 4px 20px rgba(233,69,96,0.4)',
+    'cursor:move',
+    'z-index:2147483647',
+    'display:flex',
+    'align-items:center',
+    'justify-content:center',
+    'font-size:24px',
+    'transition:transform 0.2s ease, box-shadow 0.2s ease',
+    'user-select:none'
+  ].join(';');
+
+  // Icon container
+  const iconSpan = document.createElement('span');
+  iconSpan.id = 'lingo-bubble-icon';
+  iconSpan.textContent = '🌐';
+  iconSpan.style.cssText = 'pointer-events:none;';
+  floatingBubble.appendChild(iconSpan);
+  
+  floatingBubble.title = 'LingoScript Control';
+
+  // Message bubble (tooltip)
+  const messageBubble = document.createElement('div');
+  messageBubble.id = 'lingo-bubble-message';
+  messageBubble.style.cssText = [
+    'position:absolute',
+    'right:70px',
+    'top:50%',
+    'transform:translateY(-50%)',
+    'background:#1a1a2e',
+    'color:#e0e0e0',
+    'padding:10px 14px',
+    'border-radius:8px',
+    'font-size:13px',
+    'white-space:nowrap',
+    'box-shadow:0 2px 10px rgba(0,0,0,0.3)',
+    'display:none',
+    'max-width:250px',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    'border:1px solid #e94560'
+  ].join(';');
+  floatingBubble.appendChild(messageBubble);
+
+  // Control panel (expands when clicked)
+  const controlPanel = document.createElement('div');
+  controlPanel.id = 'lingo-control-panel';
+  controlPanel.style.cssText = [
+    'position:absolute',
+    'right:70px',
+    'top:0',
+    'background:#1a1a2e',
+    'border-radius:12px',
+    'padding:12px',
+    'box-shadow:0 4px 24px rgba(0,0,0,0.4)',
+    'border:1px solid #e94560',
+    'display:none',
+    'min-width:180px',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
+  ].join(';');
+
+  controlPanel.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button id="lingo-start-btn" style="padding:8px 12px;background:#28a745;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
+        ▶️ Bắt đầu dịch
+      </button>
+      <button id="lingo-pause-btn" style="padding:8px 12px;background:#ffc107;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;">
+        ⏸️ Tạm dừng
+      </button>
+      <button id="lingo-resume-btn" style="padding:8px 12px;background:#17a2b8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;">
+        ▶️ Tiếp tục
+      </button>
+      <button id="lingo-stop-btn" style="padding:8px 12px;background:#dc3545;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;">
+        ⏹️ Dừng
+      </button>
+      <div id="lingo-progress-text" style="font-size:11px;color:#8898aa;text-align:center;margin-top:4px;display:none;">
+        0/0
+      </div>
+    </div>
+  `;
+  floatingBubble.appendChild(controlPanel);
+
+  // Drag & Drop functionality
+  floatingBubble.addEventListener('mousedown', (e) => {
+    if (e.target === floatingBubble) {
+      isDragging = true;
+      const rect = floatingBubble.getBoundingClientRect();
+      dragOffset.x = e.clientX - rect.left;
+      dragOffset.y = e.clientY - rect.top;
+      floatingBubble.style.cursor = 'grabbing';
+      floatingBubble.style.transform = 'scale(0.95)';
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const x = e.clientX - dragOffset.x;
+      const y = e.clientY - dragOffset.y;
+      floatingBubble.style.left = x + 'px';
+      floatingBubble.style.top = y + 'px';
+      floatingBubble.style.right = 'auto';
+      floatingBubble.style.bottom = 'auto';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      floatingBubble.style.cursor = 'move';
+      floatingBubble.style.transform = 'scale(1)';
+    }
+  });
+
+  // Click to toggle control panel
+  floatingBubble.addEventListener('click', (e) => {
+    if (e.target === floatingBubble && !isDragging) {
+      const panel = controlPanel;
+      if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        setTimeout(() => messageBubble.style.display = 'none', 100);
+      } else {
+        panel.style.display = 'none';
+      }
+    }
+  });
+
+  // Hover effects
+  floatingBubble.addEventListener('mouseenter', () => {
+    if (!isDragging) {
+      floatingBubble.style.transform = 'scale(1.1)';
+      floatingBubble.style.boxShadow = '0 6px 28px rgba(233,69,96,0.6)';
+    }
+  });
+
+  floatingBubble.addEventListener('mouseleave', () => {
+    if (!isDragging) {
+      floatingBubble.style.transform = 'scale(1)';
+      floatingBubble.style.boxShadow = '0 4px 20px rgba(233,69,96,0.4)';
+    }
+  });
+
+  document.body.appendChild(floatingBubble);
+  return floatingBubble;
+}
+
+function showBubbleMessage(text, duration = 3000) {
+  const bubble = floatingBubble || createFloatingBubble();
+  const message = bubble.querySelector('#lingo-bubble-message');
+  message.textContent = text;
+  message.style.display = 'block';
+  
+  if (duration > 0) {
+    setTimeout(() => {
+      message.style.display = 'none';
+    }, duration);
+  }
+}
+
+function updateBubbleState(state) {
+  const bubble = floatingBubble || createFloatingBubble();
+  const icon = bubble.querySelector('#lingo-bubble-icon');
+  const startBtn = bubble.querySelector('#lingo-start-btn');
+  const pauseBtn = bubble.querySelector('#lingo-pause-btn');
+  const resumeBtn = bubble.querySelector('#lingo-resume-btn');
+  const stopBtn = bubble.querySelector('#lingo-stop-btn');
+  const progressText = bubble.querySelector('#lingo-progress-text');
+
+  // Reset all buttons
+  startBtn.style.display = 'none';
+  pauseBtn.style.display = 'none';
+  resumeBtn.style.display = 'none';
+  stopBtn.style.display = 'none';
+  progressText.style.display = 'none';
+
+  switch (state) {
+    case 'idle':
+      startBtn.style.display = 'block';
+      icon.textContent = '🌐';
+      bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
+      break;
+    case 'translating':
+      pauseBtn.style.display = 'block';
+      stopBtn.style.display = 'block';
+      progressText.style.display = 'block';
+      icon.textContent = '🔄';
+      bubble.style.background = 'linear-gradient(135deg, #28a745, #20863a)';
+      break;
+    case 'paused':
+      resumeBtn.style.display = 'block';
+      stopBtn.style.display = 'block';
+      progressText.style.display = 'block';
+      icon.textContent = '⏸️';
+      bubble.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
+      break;
+    case 'completed':
+      startBtn.style.display = 'block';
+      icon.textContent = '✅';
+      bubble.style.background = 'linear-gradient(135deg, #28a745, #20863a)';
+      showBubbleMessage('✅ Dịch hoàn tất!', 3000);
+      setTimeout(() => {
+        icon.textContent = '🌐';
+        bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
+      }, 3000);
+      break;
+    case 'error':
+      startBtn.style.display = 'block';
+      icon.textContent = '❌';
+      bubble.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+      setTimeout(() => {
+        icon.textContent = '🌐';
+        bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
+      }, 5000);
+      break;
+  }
+}
+
+function updateBubbleProgress(current, total) {
+  const bubble = floatingBubble || createFloatingBubble();
+  const progressText = bubble.querySelector('#lingo-progress-text');
+  if (progressText) {
+    progressText.textContent = `${current}/${total}`;
+  }
+}
+
+// =============================================================================
+// SEGMENT STATUS BADGES
+// =============================================================================
+
+function addSegmentBadge(element, status) {
+  // Remove existing badge
+  const existingBadge = element.querySelector('.lingo-status-badge');
+  if (existingBadge) existingBadge.remove();
+
+  const badge = document.createElement('span');
+  badge.className = 'lingo-status-badge';
+  badge.style.cssText = [
+    'display:inline-block',
+    'width:18px',
+    'height:18px',
+    'border-radius:50%',
+    'margin-right:6px',
+    'vertical-align:middle',
+    'flex-shrink:0',
+    'border:2px solid'
+  ].join(';');
+
+  const configs = {
+    pending: { bg: '#6c757d', border: '#5a6268', content: '⏳' },
+    translating: { bg: '#ffc107', border: '#e0a800', content: '🔄' },
+    completed: { bg: '#28a745', border: '#1e7e34', content: '✓' },
+    error: { bg: '#dc3545', border: '#bd2130', content: '✗' },
+    cached: { bg: '#17a2b8', border: '#138496', content: '💾' }
+  };
+
+  const config = configs[status] || configs.pending;
+  badge.style.background = config.bg;
+  badge.style.borderColor = config.border;
+  badge.style.color = '#fff';
+  badge.style.fontSize = '10px';
+  badge.style.fontWeight = '700';
+  badge.style.display = 'inline-flex';
+  badge.style.alignItems = 'center';
+  badge.style.justifyContent = 'center';
+  badge.textContent = config.content;
+  badge.title = status.charAt(0).toUpperCase() + status.slice(1);
+
+  element.insertBefore(badge, element.firstChild);
+  element.style.display = 'flex';
+  element.style.alignItems = 'center';
 }
 
 // =============================================================================
@@ -240,44 +536,16 @@ function setProgress(current, total) {
   if (pct >= 100) setTimeout(() => bar.remove(), 1200);
 }
 
-// Cancel button
-function addCancelButton() {
-  if (document.getElementById('lingo-cancel-btn')) return;
-  
-  const btn = document.createElement('button');
-  btn.id = 'lingo-cancel-btn';
-  btn.innerHTML = '⏹️ Dừng dịch';
-  btn.style.cssText = [
-    'position:fixed', 'top:50px', 'right:20px',
-    'background:#e74c3c', 'color:#fff', 'border:none',
-    'padding:10px 16px', 'border-radius:6px', 'cursor:pointer',
-    'z-index:2147483647', 'font-size:13px', 'font-weight:500',
-    'box-shadow:0 2px 10px rgba(231,76,60,0.4)',
-    'transition:all 0.2s ease'
-  ].join(';');
-  
-  btn.onmouseenter = () => { btn.style.background = '#c0392b'; btn.style.transform = 'scale(1.05)'; };
-  btn.onmouseleave = () => { btn.style.background = '#e74c3c'; btn.style.transform = 'scale(1)'; };
-  btn.onclick = () => {
-    shouldCancel = true;
-    btn.disabled = true;
-    btn.style.opacity = '0.5';
-    btn.innerHTML = '⏳ Đang dừng...';
-  };
-  
-  document.body.appendChild(btn);
-}
-
-function removeCancelButton() {
-  const btn = document.getElementById('lingo-cancel-btn');
-  if (btn) btn.remove();
-}
+// Removed old cancel button - now using floating bubble
 
 // Mark segments as loading
-function markLoading(batch) {
+function markLoading(batch, status = 'translating') {
   batch.forEach(({ id }) => {
     const el = nodeMap.get(id);
-    if (el) el.style.opacity = '0.4';
+    if (el) {
+      el.style.opacity = '0.4';
+      addSegmentBadge(el, status);
+    }
   });
 }
 
@@ -295,29 +563,42 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
     const el = nodeMap.get(item.id);
     if (!el) return;
 
+    // Add status badge
+    const status = item.fromCache ? 'cached' : 'completed';
+    addSegmentBadge(el, status);
+
     // Save original text if bilingual mode
     if (!el.dataset.lingoOriginal) {
       el.dataset.lingoOriginal = el.innerText.trim();
     }
 
+    // Clear existing content but keep badge
+    const badge = el.querySelector('.lingo-status-badge');
+    el.innerHTML = '';
+    if (badge) el.appendChild(badge);
+
     if (bilingualMode) {
       // Bilingual: Keep original, add translation below
-      el.innerHTML = '';
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1;';
       
       const originalSpan = document.createElement('div');
-      originalSpan.style.cssText = 'color:#666;font-size:0.85em;line-height:1.4;margin-bottom:4px;';
+      originalSpan.style.cssText = 'color:#666;font-size:0.85em;line-height:1.4;';
       originalSpan.textContent = el.dataset.lingoOriginal;
       
       const translatedSpan = document.createElement('div');
       translatedSpan.style.cssText = 'color:#2e7d32;font-weight:500;line-height:1.5;';
       translatedSpan.textContent = item.text;
       
-      el.appendChild(originalSpan);
-      el.appendChild(translatedSpan);
+      wrapper.appendChild(originalSpan);
+      wrapper.appendChild(translatedSpan);
+      el.appendChild(wrapper);
     } else {
       // Replace mode
-      el.innerText = item.text;
-      el.style.color = '#2e7d32';
+      const textSpan = document.createElement('span');
+      textSpan.style.cssText = 'color:#2e7d32;flex:1;';
+      textSpan.textContent = item.text;
+      el.appendChild(textSpan);
     }
 
     el.dataset.lingoTranslated = 'true';
@@ -328,9 +609,9 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
     if (!el.querySelector('.lingo-speak-btn')) {
       const btn = document.createElement('span');
       btn.className = 'lingo-speak-btn';
-      btn.textContent = ' 🔊';
+      btn.textContent = '🔊';
       btn.title = 'Nghe đoạn này';
-      btn.style.cssText = 'cursor:pointer;font-size:0.8em;opacity:0.6;transition:opacity 0.15s,transform 0.15s;margin-left:4px;';
+      btn.style.cssText = 'cursor:pointer;font-size:0.8em;opacity:0.6;transition:opacity 0.15s,transform 0.15s;margin-left:8px;';
       btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
       btn.addEventListener('mouseleave', () => { btn.style.opacity = '0.6'; });
       btn.addEventListener('click', (e) => {
@@ -342,11 +623,7 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
         });
       });
 
-      if (bilingualMode) {
-        el.lastChild.appendChild(btn);
-      } else {
-        el.appendChild(btn);
-      }
+      el.appendChild(btn);
     }
   });
 }
@@ -603,17 +880,96 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false) {
 }
 
 // =============================================================================
+// BUBBLE CONTROLS SETUP
+// =============================================================================
+
+function setupBubbleControls(batches, config) {
+  const bubble = floatingBubble || createFloatingBubble();
+  
+  const startBtn = bubble.querySelector('#lingo-start-btn');
+  const pauseBtn = bubble.querySelector('#lingo-pause-btn');
+  const resumeBtn = bubble.querySelector('#lingo-resume-btn');
+  const stopBtn = bubble.querySelector('#lingo-stop-btn');
+
+  // Start button
+  startBtn.onclick = () => {
+    if (!isTranslating) {
+      initiateTranslation();
+      bubble.querySelector('#lingo-control-panel').style.display = 'none';
+    }
+  };
+
+  // Pause button
+  pauseBtn.onclick = () => {
+    isPaused = true;
+    updateBubbleState('paused');
+    showBubbleMessage('⏸️ Đã tạm dừng', 2000);
+  };
+
+  // Resume button
+  resumeBtn.onclick = () => {
+    isPaused = false;
+    updateBubbleState('translating');
+    showBubbleMessage('▶️ Tiếp tục dịch...', 2000);
+  };
+
+  // Stop button
+  stopBtn.onclick = () => {
+    shouldCancel = true;
+    isPaused = false;
+    updateBubbleState('idle');
+    showBubbleMessage('⏹️ Đang dừng...', 2000);
+  };
+}
+
+function setupRetryHandler(element, id, text, config) {
+  element.style.cursor = 'pointer';
+  element.title = '❌ Dịch thất bại - Click để thử lại';
+  
+  element.onclick = async () => {
+    element.style.opacity = '0.4';
+    element.style.cursor = 'wait';
+    addSegmentBadge(element, 'translating');
+
+    try {
+      const retryConfig = await new Promise(resolve => {
+        chrome.storage.sync.get([
+          'llmProvider', 'llmApiKey', 'targetLanguage', 
+          'ollamaModel', 'ollamaModelCustom', 'customSystemPrompt', 'bilingualMode'
+        ], resolve);
+      });
+      
+      retryConfig.resolvedOllamaModel = retryConfig.ollamaModel === 'custom'
+        ? (retryConfig.ollamaModelCustom || 'gpt-oss:120b')
+        : (retryConfig.ollamaModel || 'gpt-oss:120b');
+      
+      const retryTranslated = await translateBatch([{ id, text }], retryConfig);
+      element.style.opacity = '1';
+      element.style.cursor = '';
+      replaceText(retryTranslated, retryConfig.targetLanguage || 'Vietnamese', retryConfig.bilingualMode);
+      showBubbleMessage('✅ Retry thành công!', 2000);
+    } catch (e) {
+      element.style.opacity = '1';
+      element.style.cursor = 'pointer';
+      addSegmentBadge(element, 'error');
+      showBubbleMessage('❌ Retry thất bại', 2000);
+    }
+  };
+}
+
+// =============================================================================
 // MAIN: INITIATE TRANSLATION
 // =============================================================================
 
-async function initiateTranslation() {
+async function initiateTranslation(mode = 'batch') {
   const config = await new Promise(resolve => {
     chrome.storage.sync.get([
       'llmProvider', 'llmApiKey', 'targetLanguage',
       'ollamaModel', 'ollamaModelCustom',
       'ttsProvider', 'ttsApiKey', 'isAutoPlayEnabled',
       'transcriptSelector', 'activeClass', 'containerSelector',
-      'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay'
+      'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay',
+      'singleBatchMode'
     ], resolve);
   });
 
@@ -686,23 +1042,76 @@ async function initiateTranslation() {
     setupLazyLoading(containerSel, selector, config);
   }
 
-  const total = batches.length;
+  totalBatches = batches.length;
+  currentBatchIndex = 0;
   isTranslating = true;
-  console.log(`[LingoScript] Starting: ${total} batches, provider: ${config.llmProvider}`);
+  isPaused = false;
+  shouldCancel = false;
 
-  // Add cancel button
-  addCancelButton();
+  console.log(`[LingoScript] Starting: ${totalBatches} batches, provider: ${config.llmProvider}`);
 
+  // Create and setup floating bubble
+  const bubble = createFloatingBubble();
+  updateBubbleState('translating');
+  updateBubbleProgress(0, totalBatches);
+  showBubbleMessage('🚀 Bắt đầu dịch...', 2000);
+
+  // Setup button handlers
+  setupBubbleControls(batches, config);
+
+  // Single batch mode: Send all at once
+  if (config.singleBatchMode && batches.length > 1) {
+    const allItems = batches.flat();
+    markLoading(allItems, 'translating');
+    showBubbleMessage(`📤 Đang gửi ${allItems.length} đoạn cho AI...`, 0);
+
+    try {
+      const translated = await translateBatch(allItems, config);
+      unmarkLoading(allItems);
+      replaceText(translated, config.targetLanguage || 'Vietnamese', config.bilingualMode);
+      
+      updateBubbleState('completed');
+      updateBubbleProgress(totalBatches, totalBatches);
+      setProgress(totalBatches, totalBatches);
+      console.log('[LingoScript] ✓ Single-batch translation complete!');
+    } catch (err) {
+      console.error('[LingoScript] Single-batch failed:', err.message);
+      allItems.forEach(({ id, text }) => {
+        const el = nodeMap.get(id);
+        if (el && !el.dataset.lingoTranslated) {
+          addSegmentBadge(el, 'error');
+          setupRetryHandler(el, id, text, config);
+        }
+      });
+      updateBubbleState('error');
+      showBubbleMessage('❌ Dịch thất bại!', 3000);
+    }
+    
+    isTranslating = false;
+    return;
+  }
+
+  // Batch mode: Process one by one
   for (let i = 0; i < batches.length; i++) {
-    // Check if user cancelled
+    currentBatchIndex = i;
+
+    // Check pause
+    while (isPaused && !shouldCancel) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+
+    // Check cancel
     if (shouldCancel) {
       console.log('[LingoScript] Translation cancelled by user');
-      showLingoToast('❌ Đã dừng dịch', false);
+      updateBubbleState('idle');
+      showBubbleMessage('⏹️ Đã dừng dịch', 2000);
       break;
     }
 
-    setProgress(i, total);
-    markLoading(batches[i]);
+    setProgress(i, totalBatches);
+    updateBubbleProgress(i + 1, totalBatches);
+    markLoading(batches[i], 'translating');
+    showBubbleMessage(`🔄 Đang dịch batch ${i + 1}/${totalBatches}...`, 0);
 
     try {
       const translated = await translateBatch(batches[i], config);
@@ -710,52 +1119,31 @@ async function initiateTranslation() {
       replaceText(translated, config.targetLanguage || 'Vietnamese', config.bilingualMode);
     } catch (err) {
       unmarkLoading(batches[i]);
-      console.error(`[LingoScript] Batch ${i + 1}/${total} failed:`, err.message);
+      console.error(`[LingoScript] Batch ${i + 1}/${totalBatches} failed:`, err.message);
       
-      // Mark failed segments with red color for manual retry
+      // Mark failed segments
       batches[i].forEach(({ id, text }) => {
         const el = nodeMap.get(id);
         if (el && !el.dataset.lingoTranslated) {
-          el.style.color = '#e74c3c';
-          el.title = '❌ Dịch thất bại - Click để thử lại';
-          el.style.cursor = 'pointer';
-          el.onclick = async () => {
-            el.style.opacity = '0.4';
-            el.style.cursor = 'wait';
-            try {
-              const retryConfig = await new Promise(resolve => {
-                chrome.storage.sync.get([
-                  'llmProvider', 'llmApiKey', 'targetLanguage', 
-                  'ollamaModel', 'ollamaModelCustom', 'customSystemPrompt', 'bilingualMode'
-                ], resolve);
-              });
-              retryConfig.resolvedOllamaModel = retryConfig.ollamaModel === 'custom'
-                ? (retryConfig.ollamaModelCustom || 'gpt-oss:120b')
-                : (retryConfig.ollamaModel || 'gpt-oss:120b');
-              
-              const retryTranslated = await translateBatch([{ id, text }], retryConfig);
-              el.style.opacity = '1';
-              el.style.cursor = '';
-              replaceText(retryTranslated, retryConfig.targetLanguage || 'Vietnamese', retryConfig.bilingualMode);
-            } catch (e) {
-              el.style.opacity = '1';
-              el.style.cursor = 'pointer';
-              showLingoToast('Retry thất bại: ' + e.message, true);
-            }
-          };
+          addSegmentBadge(el, 'error');
+          setupRetryHandler(el, id, text, config);
         }
       });
-      showLingoToast(`⚠️ Batch ${i + 1}/${total} thất bại - Segments màu đỏ click để retry`, true);
+      showBubbleMessage(`⚠️ Batch ${i + 1} thất bại`, 2000);
     }
 
-    // Rate-limit: small delay between requests (skip after last batch)
+    // Rate-limit delay
     if (i < batches.length - 1) {
       await new Promise(r => setTimeout(r, 800));
     }
   }
 
   isTranslating = false;
-  removeCancelButton();
+  if (!shouldCancel) {
+    updateBubbleState('completed');
+    updateBubbleProgress(totalBatches, totalBatches);
+    setProgress(totalBatches, totalBatches);
+  }
 
   setProgress(total, total);
   console.log('[LingoScript] ✓ Translation complete!');
@@ -772,3 +1160,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   return true; // keep message channel open for async response
 });
+
+// Initialize floating bubble on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => createFloatingBubble(), 1000);
+  });
+} else {
+  setTimeout(() => createFloatingBubble(), 1000);
+}
