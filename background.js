@@ -398,6 +398,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // SUMMARIZE TEXT
+  if (request.action === 'SUMMARIZE_TEXT') {
+    const { text, config } = request;
+    
+    if (!text || text.length < 50) {
+      sendResponse({ success: false, error: 'Text too short to summarize' });
+      return true;
+    }
+
+    const summarize = async () => {
+      try {
+        const provider = LLM[config.llmProvider.trim()];
+        if (!provider) {
+          throw new Error(`Unknown provider: ${config.llmProvider}`);
+        }
+
+        const summarizePrompt = `Hãy tóm tắt nội dung sau đây thành ${config.targetLanguage || 'Vietnamese'} một cách ngắn gọn (3-5 câu chính):`;
+        
+        // Use translation API for summarization
+        const response = await provider.translateChunk(
+          [{ id: 0, text: `${summarizePrompt}\n\n${text}` }],
+          config.llmApiKey,
+          config.targetLanguage || 'Vietnamese',
+          null,
+          config.resolvedOllamaModel
+        );
+
+        if (response && response[0] && response[0].text) {
+          sendResponse({ success: true, summary: response[0].text });
+        } else {
+          sendResponse({ success: false, error: 'Invalid summarization response' });
+        }
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    };
+
+    summarize();
+    return true;
+  }
+
   // GET TRANSLATION STATE
   if (request.action === 'GET_STATE') {
     sendResponse(translationState);

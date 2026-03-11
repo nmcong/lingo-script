@@ -153,11 +153,24 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadCacheStats() {
     chrome.runtime.sendMessage({ action: 'GET_CACHE_STATS' }, (response) => {
       if (response && response.count !== undefined) {
-        cacheInfo.textContent = `💾 ${response.count} đoạn`;
+        const countSpan = document.getElementById('cacheCount');
+        if (countSpan) {
+          countSpan.textContent = `${response.count} đoạn`;
+        }
       }
     });
   }
   loadCacheStats();
+  
+  // Initialize Feather icons
+  if (window.feather) {
+    feather.replace();
+  } else {
+    // Wait for script to load
+    setTimeout(() => {
+      if (window.feather) feather.replace();
+    }, 500);
+  }
 
   // ── Load saved config ──────────────────────────────────────────────────────
   chrome.storage.sync.get([

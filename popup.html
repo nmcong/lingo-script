@@ -209,10 +209,13 @@
 <body>
 
   <div class="header">
-    <span class="header-icon">🌐</span>
+    <span class="header-icon"><i data-feather="globe" style="width:22px;height:22px;"></i></span>
     <span class="header-title">LingoScript</span>
     <span class="header-version">v2.0</span>
   </div>
+  
+  <!-- Load Feather Icons -->
+  <script src="https://unpkg.com/feather-icons"></script>
 
   <div class="content">
 
@@ -234,7 +237,7 @@
         <label>API Key</label>
         <div style="display:flex;gap:5px;">
           <input type="password" id="llmApiKey" placeholder="Nhập API Key..." style="flex:1;">
-          <button id="testConnBtn" style="flex:none;padding:6px 10px;background:#0f3460;color:#c0c8d8;border:1px solid #1a4a8a;border-radius:5px;cursor:pointer;font-size:11px;" title="Kiểm tra kết nối">🔌</button>
+          <button id="testConnBtn" style="flex:none;padding:6px 10px;background:#0f3460;color:#c0c8d8;border:1px solid #1a4a8a;border-radius:5px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;" title="Kiểm tra kết nối"><i data-feather="zap" style="width:14px;height:14px;"></i></button>
         </div>
         <div id="testStatus" style="font-size:10px;margin-top:4px;min-height:14px;"></div>
       </div>
@@ -342,11 +345,11 @@
       </div>
 
       <div style="margin-top:8px;display:flex;gap:6px;">
-        <button id="clearCacheBtn" style="flex:1;padding:6px;background:#2c3e50;color:#95a5a6;border:1px solid #34495e;border-radius:5px;cursor:pointer;font-size:11px;">
-          🗑️ Xóa Cache
+        <button id="clearCacheBtn" style="flex:1;padding:6px;background:#2c3e50;color:#95a5a6;border:1px solid #34495e;border-radius:5px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;gap:4px;">
+          <i data-feather="trash-2" style="width:12px;height:12px;"></i> Xóa Cache
         </button>
-        <div id="cacheInfo" style="flex:1;font-size:10px;color:#7f8c8d;display:flex;align-items:center;justify-content:center;">
-          💾 --
+        <div id="cacheInfo" style="flex:1;font-size:10px;color:#7f8c8d;display:flex;align-items:center;justify-content:center;gap:4px;">
+          <i data-feather="database" style="width:12px;height:12px;"></i> <span id="cacheCount">--</span>
         </div>
       </div>
     </div>
@@ -383,8 +386,8 @@
 
   <div class="footer">
     <div class="buttons">
-      <button id="saveBtn">💾 Lưu</button>
-      <button id="translateBtn">⚡ Dịch trang này</button>
+      <button id="saveBtn" style="display:flex;align-items:center;justify-content:center;gap:6px;"><i data-feather="save" style="width:14px;height:14px;"></i> Lưu</button>
+      <button id="translateBtn" style="display:flex;align-items:center;justify-content:center;gap:6px;"><i data-feather="globe" style="width:14px;height:14px;"></i> Dịch trang này</button>
     </div>
     <div class="status" id="status"></div>
   </div>

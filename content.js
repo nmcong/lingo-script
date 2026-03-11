@@ -239,8 +239,8 @@ function createFloatingBubble() {
   // Icon container
   const iconSpan = document.createElement('span');
   iconSpan.id = 'lingo-bubble-icon';
-  iconSpan.textContent = '🌐';
-  iconSpan.style.cssText = 'pointer-events:none;';
+  iconSpan.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
+  iconSpan.style.cssText = 'pointer-events:none;display:flex;align-items:center;justify-content:center;';
   floatingBubble.appendChild(iconSpan);
   
   floatingBubble.title = 'LingoScript Control';
@@ -249,10 +249,7 @@ function createFloatingBubble() {
   const messageBubble = document.createElement('div');
   messageBubble.id = 'lingo-bubble-message';
   messageBubble.style.cssText = [
-    'position:absolute',
-    'right:70px',
-    'top:50%',
-    'transform:translateY(-50%)',
+    'position:fixed', // Changed from absolute to fixed
     'background:#1a1a2e',
     'color:#e0e0e0',
     'padding:12px 16px',
@@ -267,9 +264,10 @@ function createFloatingBubble() {
     'min-width:200px',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
     'border:2px solid #e94560',
-    'z-index:2147483648'
+    'z-index:2147483649', // Higher than bubble
+    'pointer-events:none' // Don't block clicks
   ].join(';');
-  floatingBubble.appendChild(messageBubble);
+  document.body.appendChild(messageBubble); // Append to body instead of bubble
 
   // Control panel (expands when clicked)
   const controlPanel = document.createElement('div');
@@ -290,17 +288,20 @@ function createFloatingBubble() {
 
   controlPanel.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:8px;">
-      <button id="lingo-start-btn" style="padding:8px 12px;background:#28a745;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
-        ▶️ Bắt đầu dịch
+      <button id="lingo-start-btn" style="padding:8px 12px;background:#28a745;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
+        <i data-feather="play" style="width:14px;height:14px;"></i> Bắt đầu dịch
       </button>
-      <button id="lingo-pause-btn" style="padding:8px 12px;background:#ffc107;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;">
-        ⏸️ Tạm dừng
+      <button id="lingo-pause-btn" style="padding:8px 12px;background:#ffc107;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;align-items:center;justify-content:center;gap:6px;">
+        <i data-feather="pause" style="width:14px;height:14px;"></i> Tạm dừng
       </button>
-      <button id="lingo-resume-btn" style="padding:8px 12px;background:#17a2b8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;">
-        ▶️ Tiếp tục
+      <button id="lingo-resume-btn" style="padding:8px 12px;background:#17a2b8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;align-items:center;justify-content:center;gap:6px;">
+        <i data-feather="play-circle" style="width:14px;height:14px;"></i> Tiếp tục
       </button>
-      <button id="lingo-stop-btn" style="padding:8px 12px;background:#dc3545;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;">
-        ⏹️ Dừng
+      <button id="lingo-stop-btn" style="padding:8px 12px;background:#dc3545;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;align-items:center;justify-content:center;gap:6px;">
+        <i data-feather="square" style="width:14px;height:14px;"></i> Dừng
+      </button>
+      <button id="lingo-summarize-btn" style="padding:8px 12px;background:#6c757d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
+        <i data-feather="file-text" style="width:14px;height:14px;"></i> Tóm tắt
       </button>
       <div id="lingo-progress-text" style="font-size:11px;color:#8898aa;text-align:center;margin-top:4px;display:none;">
         0/0
@@ -381,12 +382,33 @@ function createFloatingBubble() {
   });
 
   document.body.appendChild(floatingBubble);
+  
+  // Load Feather icons if not already loaded
+  if (!window.feather) {
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/feather-icons';
+    script.onload = () => {
+      if (window.feather) {
+        window.feather.replace();
+      }
+    };
+    document.head.appendChild(script);
+  } else {
+    window.feather.replace();
+  }
+  
   return floatingBubble;
 }
 
 function showBubbleMessage(text, duration = 3000, isTranscript = false) {
   const bubble = floatingBubble || createFloatingBubble();
-  const message = bubble.querySelector('#lingo-bubble-message');
+  const message = document.getElementById('lingo-bubble-message');
+  if (!message) return;
+  
+  // Position message next to bubble
+  const bubbleRect = bubble.getBoundingClientRect();
+  message.style.left = (bubbleRect.left - 420) + 'px'; // 400px width + 20px gap
+  message.style.top = bubbleRect.top + 'px';
   
   // Style differently for transcript vs status messages
   if (isTranscript) {
@@ -456,43 +478,50 @@ function updateBubbleState(state) {
 
   switch (state) {
     case 'idle':
-      startBtn.style.display = 'block';
-      icon.textContent = '🌐';
+      startBtn.style.display = 'flex';
+      icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
       break;
     case 'translating':
-      pauseBtn.style.display = 'block';
-      stopBtn.style.display = 'block';
+      pauseBtn.style.display = 'flex';
+      stopBtn.style.display = 'flex';
       progressText.style.display = 'block';
-      icon.textContent = '🔄';
+      icon.innerHTML = '<i data-feather="refresh-cw" class="rotating" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #28a745, #20863a)';
       break;
     case 'paused':
-      resumeBtn.style.display = 'block';
-      stopBtn.style.display = 'block';
+      resumeBtn.style.display = 'flex';
+      stopBtn.style.display = 'flex';
       progressText.style.display = 'block';
-      icon.textContent = '⏸️';
+      icon.innerHTML = '<i data-feather="pause-circle" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
       break;
     case 'completed':
-      startBtn.style.display = 'block';
-      icon.textContent = '✅';
+      startBtn.style.display = 'flex';
+      icon.innerHTML = '<i data-feather="check-circle" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #28a745, #20863a)';
-      showBubbleMessage('✅ Dịch hoàn tất!', 3000);
+      showBubbleMessage('Dịch hoàn tất!', 3000);
       setTimeout(() => {
-        icon.textContent = '🌐';
+        icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
         bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
+        if (window.feather) window.feather.replace();
       }, 3000);
       break;
     case 'error':
-      startBtn.style.display = 'block';
-      icon.textContent = '❌';
+      startBtn.style.display = 'flex';
+      icon.innerHTML = '<i data-feather="x-circle" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
       setTimeout(() => {
-        icon.textContent = '🌐';
+        icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
         bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
+        if (window.feather) window.feather.replace();
       }, 5000);
       break;
+  }
+  
+  // Replace Feather icons
+  if (window.feather) {
+    window.feather.replace();
   }
 }
 
@@ -527,11 +556,11 @@ function addSegmentBadge(element, status) {
   ].join(';');
 
   const configs = {
-    pending: { bg: '#6c757d', border: '#5a6268', content: '⏳' },
-    translating: { bg: '#ffc107', border: '#e0a800', content: '🔄' },
-    completed: { bg: '#28a745', border: '#1e7e34', content: '✓' },
-    error: { bg: '#dc3545', border: '#bd2130', content: '✗' },
-    cached: { bg: '#17a2b8', border: '#138496', content: '💾' }
+    pending: { bg: '#6c757d', border: '#5a6268', icon: 'clock' },
+    translating: { bg: '#ffc107', border: '#e0a800', icon: 'loader' },
+    completed: { bg: '#28a745', border: '#1e7e34', icon: 'check' },
+    error: { bg: '#dc3545', border: '#bd2130', icon: 'x' },
+    cached: { bg: '#17a2b8', border: '#138496', icon: 'database' }
   };
 
   const config = configs[status] || configs.pending;
@@ -543,8 +572,13 @@ function addSegmentBadge(element, status) {
   badge.style.display = 'inline-flex';
   badge.style.alignItems = 'center';
   badge.style.justifyContent = 'center';
-  badge.textContent = config.content;
+  badge.innerHTML = `<i data-feather="${config.icon}" style="width:12px;height:12px;stroke-width:3;"></i>`;
   badge.title = status.charAt(0).toUpperCase() + status.slice(1);
+  
+  // Replace icons
+  if (window.feather) {
+    window.feather.replace();
+  }
 
   element.insertBefore(badge, element.firstChild);
   
@@ -709,9 +743,9 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
     if (!existingSpeaker) {
       const btn = document.createElement('span');
       btn.className = 'lingo-speak-btn';
-      btn.textContent = '🔊';
+      btn.innerHTML = '<i data-feather="volume-2" style="width:14px;height:14px;"></i>';
       btn.title = 'Nghe đoạn này';
-      btn.style.cssText = 'cursor:pointer;font-size:0.8em;opacity:0.6;transition:opacity 0.15s,transform 0.15s;margin-left:8px;';
+      btn.style.cssText = 'cursor:pointer;opacity:0.6;transition:opacity 0.15s,transform 0.15s;margin-left:8px;display:inline-flex;align-items:center;';
       btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
       btn.addEventListener('mouseleave', () => { btn.style.opacity = '0.6'; });
       btn.addEventListener('click', (e) => {
@@ -724,6 +758,11 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
       });
 
       el.appendChild(btn);
+      
+      // Replace icons
+      if (window.feather) {
+        window.feather.replace();
+      }
     }
   });
 }
@@ -849,6 +888,13 @@ if (!document.getElementById('lingo-overlay-styles')) {
     @keyframes fadeIn {
       from { opacity: 0; transform: translateX(-50%) translateY(10px); }
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    @keyframes rotating {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .rotating {
+      animation: rotating 2s linear infinite;
     }
   `;
   document.head.appendChild(style);
@@ -976,11 +1022,19 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
         }
 
         if (translatedText) {
-          console.log('[LingoScript] Auto-play:', translatedText.slice(0, 50) + '...');
+          console.log('[LingoScript] Auto-play:', translatedText.slice(0, 50) + '...', 'enableBubbleText:', enableBubbleText);
 
-          // Show in bubble message if enabled
+          // Show in bubble message if enabled (always close panel first)
           if (enableBubbleText) {
-            showBubbleMessage(translatedText, 0, true); // duration=0 means persistent until next cue
+            // Close control panel if open
+            const bubble = floatingBubble || createFloatingBubble();
+            const panel = bubble.querySelector('#lingo-control-panel');
+            if (panel) panel.style.display = 'none';
+            
+            // Show message
+            setTimeout(() => {
+              showBubbleMessage(translatedText, 0, true); // duration=0 means persistent until next cue
+            }, 100);
           }
 
           // Show overlay subtitle if enabled
@@ -1016,6 +1070,7 @@ function setupBubbleControls(batches, config) {
   const pauseBtn = bubble.querySelector('#lingo-pause-btn');
   const resumeBtn = bubble.querySelector('#lingo-resume-btn');
   const stopBtn = bubble.querySelector('#lingo-stop-btn');
+  const summarizeBtn = bubble.querySelector('#lingo-summarize-btn');
 
   // Start button
   startBtn.onclick = () => {
@@ -1029,14 +1084,14 @@ function setupBubbleControls(batches, config) {
   pauseBtn.onclick = () => {
     isPaused = true;
     updateBubbleState('paused');
-    showBubbleMessage('⏸️ Đã tạm dừng', 2000);
+    showBubbleMessage('Đã tạm dừng', 2000);
   };
 
   // Resume button
   resumeBtn.onclick = () => {
     isPaused = false;
     updateBubbleState('translating');
-    showBubbleMessage('▶️ Tiếp tục dịch...', 2000);
+    showBubbleMessage('Tiếp tục dịch...', 2000);
   };
 
   // Stop button
@@ -1044,7 +1099,69 @@ function setupBubbleControls(batches, config) {
     shouldCancel = true;
     isPaused = false;
     updateBubbleState('idle');
-    showBubbleMessage('⏹️ Đang dừng...', 2000);
+    showBubbleMessage('Đang dừng...', 2000);
+  };
+
+  // Summarize button
+  summarizeBtn.onclick = async () => {
+    bubble.querySelector('#lingo-control-panel').style.display = 'none';
+    showBubbleMessage('Đang tóm tắt transcript...', 0);
+    
+    try {
+      const allTranslatedElements = document.querySelectorAll('[data-lingo-translated="true"]');
+      if (allTranslatedElements.length === 0) {
+        showBubbleMessage('Chưa có transcript được dịch!', 3000);
+        return;
+      }
+
+      // Collect all translated text
+      const allText = Array.from(allTranslatedElements)
+        .map(el => el.dataset.lingoText || el.textContent.trim())
+        .filter(t => t && t.length > 0)
+        .join(' ');
+
+      if (allText.length < 50) {
+        showBubbleMessage('Transcript quá ngắn để tóm tắt!', 3000);
+        return;
+      }
+
+      // Get config for LLM
+      const cfg = await new Promise(resolve => {
+        chrome.storage.sync.get([
+          'llmProvider', 'llmApiKey', 'targetLanguage', 
+          'ollamaModel', 'ollamaModelCustom'
+        ], resolve);
+      });
+
+      const resolvedModel = cfg.ollamaModel === 'custom' 
+        ? (cfg.ollamaModelCustom || 'gpt-oss:120b')
+        : (cfg.ollamaModel || 'gpt-oss:120b');
+
+      // Send to background for summarization
+      const summary = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          action: 'SUMMARIZE_TEXT',
+          text: allText,
+          config: {
+            llmProvider: cfg.llmProvider,
+            llmApiKey: cfg.llmApiKey,
+            targetLanguage: cfg.targetLanguage,
+            resolvedOllamaModel: resolvedModel
+          }
+        }, (response) => {
+          if (response && response.success) {
+            resolve(response.summary);
+          } else {
+            reject(new Error(response?.error || 'Summarization failed'));
+          }
+        });
+      });
+
+      showBubbleMessage(summary, 0, true); // Show summary persistently
+    } catch (err) {
+      showBubbleMessage('Lỗi: ' + err.message, 5000);
+      console.error('[LingoScript] Summarize failed:', err);
+    }
   };
 }
 
