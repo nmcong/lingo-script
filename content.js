@@ -488,8 +488,17 @@ function addSegmentBadge(element, status) {
   badge.title = status.charAt(0).toUpperCase() + status.slice(1);
 
   element.insertBefore(badge, element.firstChild);
-  element.style.display = 'flex';
-  element.style.alignItems = 'center';
+  
+  // Ensure element can display badge properly (but preserve inline if needed)
+  const currentDisplay = window.getComputedStyle(element).display;
+  if (currentDisplay === 'block' || currentDisplay === 'flex') {
+    element.style.display = 'flex';
+    element.style.alignItems = 'center';
+  } else {
+    // For inline elements, don't force flex
+    element.style.display = 'inline-flex';
+    element.style.alignItems = 'center';
+  }
 }
 
 // =============================================================================
@@ -563,50 +572,82 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
     const el = nodeMap.get(item.id);
     if (!el) return;
 
+    // Save original attributes before modifying
+    const originalDataPurpose = el.dataset.purpose;
+    const originalClass = el.className;
+
     // Add status badge
     const status = item.fromCache ? 'cached' : 'completed';
     addSegmentBadge(el, status);
 
-    // Save original text if bilingual mode
+    // Save original text if not saved yet
     if (!el.dataset.lingoOriginal) {
-      el.dataset.lingoOriginal = el.innerText.trim();
+      el.dataset.lingoOriginal = el.textContent.trim();
     }
 
-    // Clear existing content but keep badge
+    // Save badge and speaker button if they exist
     const badge = el.querySelector('.lingo-status-badge');
-    el.innerHTML = '';
-    if (badge) el.appendChild(badge);
+    const existingSpeaker = el.querySelector('.lingo-speak-btn');
+
+    // Clear content but preserve structure
+    const childNodes = Array.from(el.childNodes);
+    childNodes.forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE || 
+          (node.nodeType === Node.ELEMENT_NODE && 
+           !node.classList.contains('lingo-status-badge') && 
+           !node.classList.contains('lingo-speak-btn'))) {
+        node.remove();
+      }
+    });
 
     if (bilingualMode) {
       // Bilingual: Keep original, add translation below
       const wrapper = document.createElement('div');
+      wrapper.className = 'lingo-bilingual-wrapper';
       wrapper.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1;';
       
       const originalSpan = document.createElement('div');
+      originalSpan.className = 'lingo-original-text';
       originalSpan.style.cssText = 'color:#666;font-size:0.85em;line-height:1.4;';
       originalSpan.textContent = el.dataset.lingoOriginal;
       
       const translatedSpan = document.createElement('div');
+      translatedSpan.className = 'lingo-translated-text';
       translatedSpan.style.cssText = 'color:#2e7d32;font-weight:500;line-height:1.5;';
       translatedSpan.textContent = item.text;
       
       wrapper.appendChild(originalSpan);
       wrapper.appendChild(translatedSpan);
-      el.appendChild(wrapper);
+      
+      // Insert wrapper after badge but before speaker button
+      if (badge && !existingSpeaker) {
+        el.appendChild(wrapper);
+      } else if (badge && existingSpeaker) {
+        el.insertBefore(wrapper, existingSpeaker);
+      } else {
+        el.appendChild(wrapper);
+      }
     } else {
-      // Replace mode
-      const textSpan = document.createElement('span');
-      textSpan.style.cssText = 'color:#2e7d32;flex:1;';
-      textSpan.textContent = item.text;
-      el.appendChild(textSpan);
+      // Replace mode: simple text node or span
+      const textNode = document.createTextNode(item.text);
+      if (existingSpeaker) {
+        el.insertBefore(textNode, existingSpeaker);
+      } else {
+        el.appendChild(textNode);
+      }
+      el.style.color = '#2e7d32';
     }
 
+    // Restore/set critical data attributes
+    if (originalDataPurpose) {
+      el.dataset.purpose = originalDataPurpose;
+    }
     el.dataset.lingoTranslated = 'true';
     el.dataset.lingoText = item.text;
     el.title = item.fromCache ? '💾 Từ cache' : '✨ Vừa dịch';
 
-    // Speaker button 🔊
-    if (!el.querySelector('.lingo-speak-btn')) {
+    // Add speaker button if not exists
+    if (!existingSpeaker) {
       const btn = document.createElement('span');
       btn.className = 'lingo-speak-btn';
       btn.textContent = '🔊';
@@ -847,25 +888,46 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false) {
         const isActive = (activeClass && target.classList.contains(activeClass)) || 
                         target.dataset.purpose === 'transcript-cue-active';
         
-        // For Udemy: check if child span has the translated text
-        let translatedElement = target;
-        if (!target.dataset.lingoTranslated && target.querySelector) {
-          translatedElement = target.querySelector('[data-lingo-translated="true"]');
-        }
-        
-        if (isActive && translatedElement && translatedElement.dataset.lingoTranslated) {
-          const text = translatedElement.dataset.lingoText || translatedElement.innerText.replace('🔊', '').trim();
-          if (text) {
-            // Show overlay subtitle
-            if (enableOverlay) {
-              showOverlaySubtitle(text);
-            }
+        if (!isActive) return;
 
-            // Speak text
-            chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
-              speakText(text, cfg);
-            });
+        // Find translated element (could be target itself or a child)
+        let translatedElement = null;
+        let translatedText = null;
+
+        // Case 1: target itself is translated
+        if (target.dataset.lingoTranslated) {
+          translatedElement = target;
+          translatedText = target.dataset.lingoText;
+        } 
+        // Case 2: target has translated child (Udemy case)
+        else if (target.querySelector) {
+          translatedElement = target.querySelector('[data-lingo-translated="true"]');
+          if (translatedElement) {
+            translatedText = translatedElement.dataset.lingoText;
           }
+        }
+
+        // Case 3: target is parent of transcript element (look for data-purpose="cue-text")
+        if (!translatedText && target.querySelector) {
+          const cueElement = target.querySelector('[data-purpose="cue-text"]');
+          if (cueElement && cueElement.dataset.lingoTranslated) {
+            translatedElement = cueElement;
+            translatedText = cueElement.dataset.lingoText;
+          }
+        }
+
+        if (translatedText) {
+          console.log('[LingoScript] Auto-play:', translatedText.slice(0, 50) + '...');
+
+          // Show overlay subtitle
+          if (enableOverlay) {
+            showOverlaySubtitle(translatedText);
+          }
+
+          // Speak text
+          chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
+            speakText(translatedText, cfg);
+          });
         }
       }
     });
