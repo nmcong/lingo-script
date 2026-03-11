@@ -126,20 +126,29 @@ const OpenAIProvider = {
   async translateChunk(batch, apiKey, lang, customPrompt) {
     const systemMsg = customPrompt ? customPrompt.replace('${lang}', lang) : defaultSystemPrompt(lang);
     
+    // Check if this is a JSON response request (translation) or text response (summarization)
+    const isJsonMode = systemMsg.includes('JSON') || systemMsg.includes('json');
+    
+    const requestBody = {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemMsg },
+        { role: 'user', content: isJsonMode ? `{"data": ${JSON.stringify(batch)}}` : JSON.stringify(batch) }
+      ]
+    };
+    
+    // Only add response_format for JSON mode
+    if (isJsonMode) {
+      requestBody.response_format = { type: 'json_object' };
+    }
+    
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemMsg },
-          { role: 'user', content: `{"data": ${JSON.stringify(batch)}}` }
-        ]
-      })
+      body: JSON.stringify(requestBody)
     });
     
     if (!res.ok) {
@@ -148,8 +157,16 @@ const OpenAIProvider = {
     }
     
     const data = await res.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
-    return Array.isArray(parsed) ? parsed : (parsed.data || parsed.translations || Object.values(parsed)[0]);
+    const content = data.choices[0].message.content;
+    
+    // If JSON mode, parse and extract array
+    if (isJsonMode) {
+      const parsed = JSON.parse(content);
+      return Array.isArray(parsed) ? parsed : (parsed.data || parsed.translations || Object.values(parsed)[0]);
+    }
+    
+    // For text mode (summarization), return as-is wrapped in expected format
+    return [{ id: 0, text: content }];
   }
 };
 
