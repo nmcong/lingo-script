@@ -400,10 +400,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // SUMMARIZE TEXT
   if (request.action === 'SUMMARIZE_TEXT') {
-    const { text, config } = request;
-    
-    if (!text || text.length < 50) {
-      sendResponse({ success: false, error: 'Text too short to summarize' });
+    const { items, config, url } = request;
+
+    if (!items || items.length === 0) {
+      sendResponse({ success: false, error: 'No content to summarize' });
       return true;
     }
 
@@ -414,11 +414,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           throw new Error(`Unknown provider: ${config.llmProvider}`);
         }
 
-        const summarizePrompt = `Hãy tóm tắt nội dung sau đây thành ${config.targetLanguage || 'Vietnamese'} một cách ngắn gọn (3-5 câu chính):`;
-        
+        // Format transcript with timestamps for better context
+        let formattedText = '';
+        items.forEach((item, idx) => {
+          const prefix = item.timestamp ? `[${item.timestamp}] ` : `[${idx + 1}] `;
+          formattedText += prefix + item.text + '\n';
+        });
+
+        const summarizePrompt = `Bạn là chuyên gia phân tích nội dung video. Hãy tóm tắt chi tiết nội dung transcript sau đây bằng ${config.targetLanguage || 'Vietnamese'}.
+
+YÊU CẦU:
+- Chia thành 5-8 phần chính với tiêu đề rõ ràng
+- Mỗi phần ghi rõ timestamp (nếu có) và tóm tắt chi tiết 2-3 câu
+- Format: **[Timestamp] Tiêu đề phần**\\nNội dung tóm tắt...\\n\\n
+- Sử dụng bullet points khi cần liệt kê các ý chính
+- Tổng cộng khoảng 300-500 từ
+
+TRANSCRIPT:
+${formattedText}`;
+
         // Use translation API for summarization
         const response = await provider.translateChunk(
-          [{ id: 0, text: `${summarizePrompt}\n\n${text}` }],
+          [{ id: 0, text: summarizePrompt }],
           config.llmApiKey,
           config.targetLanguage || 'Vietnamese',
           null,
@@ -426,7 +443,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         );
 
         if (response && response[0] && response[0].text) {
-          sendResponse({ success: true, summary: response[0].text });
+          // Save summary to storage
+          const summaryData = {
+            url: url,
+            summary: response[0].text,
+            timestamp: Date.now(),
+            itemCount: items.length
+          };
+          
+          chrome.storage.local.set({ 
+            [`summary_${url}`]: summaryData 
+          });
+          
+          sendResponse({ success: true, summary: response[0].text, summaryData });
         } else {
           sendResponse({ success: false, error: 'Invalid summarization response' });
         }
@@ -436,6 +465,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     };
 
     summarize();
+    return true;
+  }
+  
+  // GET SAVED SUMMARY
+  if (request.action === 'GET_SUMMARY') {
+    chrome.storage.local.get([`summary_${request.url}`], (result) => {
+      const summaryData = result[`summary_${request.url}`];
+      if (summaryData) {
+        sendResponse({ success: true, summaryData });
+      } else {
+        sendResponse({ success: false, error: 'No summary found' });
+      }
+    });
     return true;
   }
 

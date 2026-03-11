@@ -190,7 +190,36 @@ function collectAndChunk(selector, chunkSize = 20) {
   elements.forEach((el, i) => {
     const text = el.innerText.trim();
     if (text && !el.dataset.lingoTranslated) {
-      textData.push({ id: i, text });
+      // Try to extract timestamp from various platforms
+      let timestamp = null;
+      
+      // YouTube: timestamp in button or aria-label
+      const ytButton = el.closest('button') || el.querySelector('button');
+      if (ytButton) {
+        const ariaLabel = ytButton.getAttribute('aria-label');
+        if (ariaLabel) {
+          const match = ariaLabel.match(/(\d+):(\d+)/);
+          if (match) timestamp = `${match[1]}:${match[2]}`;
+        }
+      }
+      
+      // Udemy/Generic: look for timestamp in siblings or parent
+      if (!timestamp) {
+        const container = el.closest('[data-purpose="transcript-cue"]') || 
+                         el.closest('.transcript-cue') ||
+                         el.parentElement;
+        if (container) {
+          const timeEl = container.querySelector('[data-purpose="cue-timestamp"]') ||
+                        container.querySelector('.timestamp') ||
+                        container.querySelector('time');
+          if (timeEl) timestamp = timeEl.textContent.trim();
+        }
+      }
+      
+      // Store timestamp in element dataset for later use
+      if (timestamp) el.dataset.lingoTimestamp = timestamp;
+      
+      textData.push({ id: i, text, timestamp });
       nodeMap.set(i, el);
       // Add pending badge
       addSegmentBadge(el, 'pending');
@@ -302,6 +331,9 @@ function createFloatingBubble() {
       </button>
       <button id="lingo-summarize-btn" style="padding:8px 12px;background:#6c757d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
         <i data-feather="file-text" style="width:14px;height:14px;"></i> Tóm tắt
+      </button>
+      <button id="lingo-view-summary-btn" style="padding:8px 12px;background:#17a2b8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;align-items:center;justify-content:center;gap:6px;">
+        <i data-feather="eye" style="width:14px;height:14px;"></i> Xem tóm tắt
       </button>
       <div id="lingo-progress-text" style="font-size:11px;color:#8898aa;text-align:center;margin-top:4px;display:none;">
         0/0
@@ -1061,6 +1093,195 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
 }
 
 // =============================================================================
+// SUMMARY PANEL
+// =============================================================================
+
+function showSummaryPanel(summaryText) {
+  // Remove existing panel if any
+  const existing = document.getElementById('lingo-summary-panel');
+  if (existing) existing.remove();
+
+  // Create summary panel
+  const panel = document.createElement('div');
+  panel.id = 'lingo-summary-panel';
+  panel.style.cssText = [
+    'position:fixed',
+    'top:50%',
+    'left:50%',
+    'transform:translate(-50%, -50%)',
+    'width:90%',
+    'max-width:700px',
+    'max-height:80vh',
+    'background:linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+    'border:2px solid #e94560',
+    'border-radius:16px',
+    'box-shadow:0 20px 60px rgba(233, 69, 96, 0.3)',
+    'z-index:2147483647',
+    'padding:24px',
+    'overflow-y:auto',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    'color:#e0e0e0',
+    'animation:lingoPanelSlideIn 0.3s ease-out'
+  ].join(';');
+
+  // Panel header
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(233,69,96,0.3);padding-bottom:12px;';
+  header.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;">
+      <i data-feather="file-text" style="width:24px;height:24px;color:#e94560;"></i>
+      <h3 style="margin:0;font-size:18px;font-weight:600;color:#fff;">Tóm tắt Transcript</h3>
+    </div>
+    <button id="lingo-close-summary" style="background:transparent;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;">
+      <i data-feather="x" style="width:24px;height:24px;color:#8898aa;"></i>
+    </button>
+  `;
+
+  // Panel content
+  const content = document.createElement('div');
+  content.style.cssText = 'font-size:14px;line-height:1.7;';
+  
+  // Parse summary and add timestamp jump buttons
+  content.innerHTML = parseSummaryWithTimestamps(summaryText);
+
+  // Add animation keyframes
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes lingoPanelSlideIn {
+      from { opacity: 0; transform: translate(-50%, -45%); }
+      to { opacity: 1; transform: translate(-50%, -50%); }
+    }
+    #lingo-summary-panel::-webkit-scrollbar {
+      width: 8px;
+    }
+    #lingo-summary-panel::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.2);
+      border-radius: 4px;
+    }
+    #lingo-summary-panel::-webkit-scrollbar-thumb {
+      background: #e94560;
+      border-radius: 4px;
+    }
+    .lingo-timestamp-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(233, 69, 96, 0.15);
+      border: 1px solid rgba(233, 69, 96, 0.4);
+      color: #e94560;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 8px;
+      transition: all 0.2s ease;
+    }
+    .lingo-timestamp-btn:hover {
+      background: rgba(233, 69, 96, 0.3);
+      border-color: #e94560;
+      transform: translateY(-1px);
+    }
+  `;
+  document.head.appendChild(style);
+
+  panel.appendChild(header);
+  panel.appendChild(content);
+  document.body.appendChild(panel);
+
+  // Replace feather icons
+  if (window.featherReplace) {
+    window.featherReplace();
+  }
+
+  // Close button handler
+  document.getElementById('lingo-close-summary').onclick = () => {
+    panel.style.animation = 'lingoPanelSlideOut 0.3s ease-out';
+    setTimeout(() => panel.remove(), 300);
+  };
+
+  // Add close animation
+  const closeStyle = document.createElement('style');
+  closeStyle.textContent = `
+    @keyframes lingoPanelSlideOut {
+      from { opacity: 1; transform: translate(-50%, -50%); }
+      to { opacity: 0; transform: translate(-50%, -55%); }
+    }
+  `;
+  document.head.appendChild(closeStyle);
+}
+
+function parseSummaryWithTimestamps(text) {
+  // Match timestamps in format [MM:SS] or [HH:MM:SS] or [0:00] or similar
+  const timestampRegex = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
+  
+  let parsed = text.replace(/\n/g, '<br>');
+  
+  // Replace timestamps with clickable buttons
+  parsed = parsed.replace(timestampRegex, (match, timestamp) => {
+    return `<button class="lingo-timestamp-btn" data-timestamp="${timestamp}">
+      <i data-feather="play-circle" style="width:14px;height:14px;"></i>
+      ${timestamp}
+    </button>`;
+  });
+  
+  // Make bold sections more visible
+  parsed = parsed.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff;font-weight:600;">$1</strong>');
+  
+  // Add spacing between sections
+  parsed = parsed.replace(/<br><br>/g, '<div style="margin:16px 0;"></div>');
+  
+  // Attach click handlers after rendering
+  setTimeout(() => {
+    document.querySelectorAll('.lingo-timestamp-btn').forEach(btn => {
+      btn.onclick = () => {
+        const timestamp = btn.dataset.timestamp;
+        jumpToTimestamp(timestamp);
+      };
+      
+      // Replace icons in buttons
+      if (window.featherReplace) {
+        window.featherReplace();
+      }
+    });
+  }, 100);
+  
+  return parsed;
+}
+
+function jumpToTimestamp(timestamp) {
+  // Convert timestamp to seconds
+  const parts = timestamp.split(':').map(Number);
+  let seconds = 0;
+  
+  if (parts.length === 2) {
+    // MM:SS
+    seconds = parts[0] * 60 + parts[1];
+  } else if (parts.length === 3) {
+    // HH:MM:SS
+    seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  
+  // Find video element
+  const video = document.querySelector('video');
+  if (video) {
+    video.currentTime = seconds;
+    video.play();
+    showBubbleMessage(`Nhảy đến ${timestamp}`, 2000);
+  } else {
+    // Try to find and click transcript element with matching timestamp
+    const transcriptEl = document.querySelector(`[data-lingo-timestamp="${timestamp}"]`);
+    if (transcriptEl) {
+      transcriptEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      transcriptEl.click();
+      showBubbleMessage(`Nhảy đến ${timestamp}`, 2000);
+    } else {
+      showBubbleMessage('Không tìm thấy video hoặc timestamp', 3000);
+    }
+  }
+}
+
+// =============================================================================
 // BUBBLE CONTROLS SETUP
 // =============================================================================
 
@@ -1115,13 +1336,15 @@ function setupBubbleControls(batches, config) {
         return;
       }
 
-      // Collect all translated text
-      const allText = Array.from(allTranslatedElements)
-        .map(el => el.dataset.lingoText || el.textContent.trim())
-        .filter(t => t && t.length > 0)
-        .join(' ');
+      // Collect all items with text, translated text, and timestamps
+      const items = Array.from(allTranslatedElements)
+        .map(el => ({
+          text: el.dataset.lingoText || el.textContent.trim(),
+          timestamp: el.dataset.lingoTimestamp || null
+        }))
+        .filter(item => item.text && item.text.length > 0);
 
-      if (allText.length < 50) {
+      if (items.length === 0) {
         showBubbleMessage('Transcript quá ngắn để tóm tắt!', 3000);
         return;
       }
@@ -1139,10 +1362,11 @@ function setupBubbleControls(batches, config) {
         : (cfg.ollamaModel || 'gpt-oss:120b');
 
       // Send to background for summarization
-      const summary = await new Promise((resolve, reject) => {
+      const result = await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
           action: 'SUMMARIZE_TEXT',
-          text: allText,
+          items: items,
+          url: window.location.href,
           config: {
             llmProvider: cfg.llmProvider,
             llmApiKey: cfg.llmApiKey,
@@ -1151,19 +1375,63 @@ function setupBubbleControls(batches, config) {
           }
         }, (response) => {
           if (response && response.success) {
-            resolve(response.summary);
+            resolve(response);
           } else {
             reject(new Error(response?.error || 'Summarization failed'));
           }
         });
       });
 
-      showBubbleMessage(summary, 0, true); // Show summary persistently
+      // Show summary in a dedicated panel
+      showSummaryPanel(result.summary);
+      
+      // Show "View Summary" button for future use
+      const viewSummaryBtn = bubble.querySelector('#lingo-view-summary-btn');
+      if (viewSummaryBtn) {
+        viewSummaryBtn.style.display = 'flex';
+      }
     } catch (err) {
       showBubbleMessage('Lỗi: ' + err.message, 5000);
       console.error('[LingoScript] Summarize failed:', err);
     }
   };
+  
+  // View saved summary button
+  const viewSummaryBtn = bubble.querySelector('#lingo-view-summary-btn');
+  if (viewSummaryBtn) {
+    viewSummaryBtn.onclick = async () => {
+      bubble.querySelector('#lingo-control-panel').style.display = 'none';
+      
+      try {
+        const result = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({
+            action: 'GET_SUMMARY',
+            url: window.location.href
+          }, (response) => {
+            if (response && response.success) {
+              resolve(response.summaryData);
+            } else {
+              reject(new Error('Không tìm thấy tóm tắt đã lưu'));
+            }
+          });
+        });
+        
+        showSummaryPanel(result.summary);
+      } catch (err) {
+        showBubbleMessage(err.message, 3000);
+      }
+    };
+    
+    // Check if saved summary exists on load
+    chrome.runtime.sendMessage({
+      action: 'GET_SUMMARY',
+      url: window.location.href
+    }, (response) => {
+      if (response && response.success) {
+        viewSummaryBtn.style.display = 'flex';
+      }
+    });
+  }
 }
 
 function setupRetryHandler(element, id, text, config) {
