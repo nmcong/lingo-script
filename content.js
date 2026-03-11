@@ -582,18 +582,64 @@ async function initiateTranslation() {
     setProgress(i, total);
     markLoading(batches[i]);
 
-    try {
-      const translated = await translator.translateChunk(
-        batches[i],
-        config.llmApiKey,
-        config.targetLanguage || 'Vietnamese',
-        config.resolvedOllamaModel
-      );
-      unmarkLoading(batches[i]);
-      replaceText(translated, config.targetLanguage || 'Vietnamese');
-    } catch (err) {
-      unmarkLoading(batches[i]);
-      console.error(`[LingoScript] Batch ${i + 1}/${total} failed:`, err.message);
+    let retries = 0;
+    const maxRetries = 3;
+    let success = false;
+
+    while (retries < maxRetries && !success) {
+      try {
+        const translated = await translator.translateChunk(
+          batches[i],
+          config.llmApiKey,
+          config.targetLanguage || 'Vietnamese',
+          config.resolvedOllamaModel
+        );
+        unmarkLoading(batches[i]);
+        replaceText(translated, config.targetLanguage || 'Vietnamese');
+        success = true;
+      } catch (err) {
+        retries++;
+        console.warn(`[LingoScript] Batch ${i + 1}/${total} attempt ${retries} failed:`, err.message);
+        
+        if (retries < maxRetries) {
+          // Exponential backoff: 1s, 2s, 4s
+          const delay = Math.pow(2, retries - 1) * 1000;
+          console.log(`[LingoScript] Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          // Mark failed segments with red color
+          unmarkLoading(batches[i]);
+          batches[i].forEach(({ id }) => {
+            const el = nodeMap.get(id);
+            if (el) {
+              el.style.color = '#e74c3c';
+              el.title = '❌ Dịch thất bại - Click để thử lại';
+              el.style.cursor = 'pointer';
+              el.onclick = () => {
+                chrome.storage.sync.get(['llmProvider', 'llmApiKey', 'targetLanguage', 'ollamaModelCustom', 'ollamaModel'], async (cfg) => {
+                  el.style.opacity = '0.4';
+                  try {
+                    const provider = LLM[(cfg.llmProvider || 'gemini').trim()];
+                    const translated = await provider.translateChunk(
+                      [{ id, text: el.innerText.trim() }],
+                      cfg.llmApiKey,
+                      cfg.targetLanguage || 'Vietnamese',
+                      cfg.ollamaModel === 'custom' ? cfg.ollamaModelCustom : cfg.ollamaModel
+                    );
+                    el.style.opacity = '1';
+                    replaceText(translated, cfg.targetLanguage || 'Vietnamese');
+                  } catch (e) {
+                    el.style.opacity = '1';
+                    showLingoToast('Retry thất bại: ' + e.message, true);
+                  }
+                });
+              };
+            }
+          });
+          console.error(`[LingoScript] Batch ${i + 1}/${total} failed after ${maxRetries} attempts`);
+          showLingoToast(`⚠️ Batch ${i + 1}/${total} thất bại - Segments màu đỏ click để retry`, true);
+        }
+      }
     }
 
     // Rate-limit: small delay between requests (skip after last batch)
