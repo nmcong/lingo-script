@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "LingoScript",
+  "version": "1.0.0",
+  "description": "Dịch transcript trực tiếp trên trang web với AI (Gemini, OpenAI, Claude, Ollama)",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://ollama.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LingoScript"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

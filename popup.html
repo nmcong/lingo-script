@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>LingoScript</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      width: 320px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 13px;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #16213e, #0f3460);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 2px solid #e94560;
+    }
+
+    .header-icon { font-size: 22px; }
+
+    .header-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 1.5px;
+    }
+
+    .header-version {
+      font-size: 10px;
+      color: #e94560;
+      margin-left: auto;
+      font-weight: 600;
+    }
+
+    .content { padding: 10px 12px 4px; }
+
+    .section {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 11px 12px;
+      margin-bottom: 9px;
+      border: 1px solid #0f3460;
+    }
+
+    .section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #e94560;
+      margin-bottom: 9px;
+    }
+
+    .field { margin-bottom: 7px; }
+    .field:last-child { margin-bottom: 0; }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: #8898aa;
+      margin-bottom: 3px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 6px 9px;
+      background: #0d2137;
+      border: 1px solid #1a3a5c;
+      border-radius: 5px;
+      color: #e0e0e0;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    select:focus {
+      border-color: #e94560;
+    }
+
+    select option { background: #0d2137; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+
+    .toggle-label { font-size: 12px; color: #c0c8d8; }
+
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #2a3a4a;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      left: 3px;
+      top: 3px;
+      background: #6a7a8a;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .toggle input:checked + .toggle-slider { background: #1a4a2a; }
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(16px);
+      background: #28a745;
+    }
+
+    #ttsKeyField { display: none; }
+    #customSelectorField { display: none; }
+    #customActiveClassField { display: none; }
+    #ollamaModelField { display: none; }
+
+    .detected-badge {
+      display: none;
+      font-size: 11px;
+      color: #4caf50;
+      margin-top: 5px;
+      padding: 3px 7px;
+      background: rgba(76,175,80,0.12);
+      border-radius: 4px;
+      border: 1px solid rgba(76,175,80,0.3);
+    }
+
+    .footer {
+      padding: 0 12px 12px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    button {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.3px;
+    }
+
+    #saveBtn {
+      background: #0f3460;
+      color: #c0c8d8;
+      border: 1px solid #1a4a8a;
+    }
+
+    #saveBtn:hover { background: #1a4a8a; color: #fff; }
+
+    #translateBtn {
+      background: #e94560;
+      color: white;
+    }
+
+    #translateBtn:hover:not(:disabled) { background: #c73652; }
+    #translateBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .status {
+      text-align: center;
+      font-size: 11px;
+      color: #4caf50;
+      min-height: 15px;
+    }
+
+    .status.error { color: #e94560; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <span class="header-icon">🌐</span>
+    <span class="header-title">LingoScript</span>
+    <span class="header-version">v1.0</span>
+  </div>
+
+  <div class="content">
+
+    <!-- === DỊCH THUẬT === -->
+    <div class="section">
+      <div class="section-title">Dịch thuật (LLM)</div>
+
+      <div class="field">
+        <label>Nhà cung cấp AI</label>
+        <select id="llmProvider">
+          <option value="gemini">Google Gemini 2.0 Flash</option>
+          <option value="openai">OpenAI GPT-4o Mini</option>
+          <option value="claude">Anthropic Claude Haiku</option>
+          <option value="ollama">Ollama Cloud</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>API Key</label>
+        <input type="password" id="llmApiKey" placeholder="Nhập API Key...">
+      </div>
+
+      <div class="field" id="ollamaModelField">
+        <label>Ollama Model</label>
+        <select id="ollamaModel">
+          <option value="gpt-oss:120b">gpt-oss:120b</option>
+          <option value="gpt-oss:120b-cloud">gpt-oss:120b-cloud</option>
+          <option value="custom">Tùy chỉnh...</option>
+        </select>
+        <input type="text" id="ollamaModelCustom" placeholder="VD: llama3.3:70b"
+          style="margin-top:5px;display:none;">
+      </div>
+
+      <div class="field">
+        <label>Ngôn ngữ đích</label>
+        <select id="targetLang">
+          <option value="Vietnamese">Tiếng Việt</option>
+          <option value="English">Tiếng Anh</option>
+          <option value="Japanese">Tiếng Nhật</option>
+          <option value="Korean">Tiếng Hàn</option>
+          <option value="Chinese">Tiếng Trung</option>
+          <option value="French">Tiếng Pháp</option>
+          <option value="German">Tiếng Đức</option>
+          <option value="Spanish">Tiếng Tây Ban Nha</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- === TTS === -->
+    <div class="section">
+      <div class="section-title">Đọc văn bản (TTS)</div>
+
+      <div class="field">
+        <label>Nhà cung cấp TTS</label>
+        <select id="ttsProvider">
+          <option value="builtin">Trình duyệt (Miễn phí)</option>
+          <option value="openai">OpenAI TTS</option>
+        </select>
+      </div>
+
+      <div class="field" id="ttsKeyField">
+        <label>TTS API Key (OpenAI)</label>
+        <input type="password" id="ttsApiKey" placeholder="sk-...">
+      </div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">Tự động phát (Auto-play)</span>
+        <label class="toggle">
+          <input type="checkbox" id="autoPlay">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- === TRANSCRIPT === -->
+    <div class="section">
+      <div class="section-title">Bộ chọn Transcript</div>
+
+      <div class="field">
+        <label>Nền tảng</label>
+        <select id="platformPreset">
+          <option value="youtube">YouTube</option>
+          <option value="coursera">Coursera</option>
+          <option value="udemy">Udemy</option>
+          <option value="edx">edX</option>
+          <option value="linkedin">LinkedIn Learning</option>
+          <option value="custom">Tùy chỉnh...</option>
+        </select>
+        <div class="detected-badge" id="detectedBadge"></div>
+      </div>
+
+      <div class="field" id="customSelectorField">
+        <label>CSS Selector (thẻ chứa text transcript)</label>
+        <input type="text" id="transcriptSelector" placeholder="VD: .transcript-text">
+      </div>
+
+      <div class="field" id="customActiveClassField">
+        <label>Active Class (dùng cho auto-play)</label>
+        <input type="text" id="activeClass" placeholder="VD: active">
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="buttons">
+      <button id="saveBtn">💾 Lưu</button>
+      <button id="translateBtn">⚡ Dịch trang này</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
