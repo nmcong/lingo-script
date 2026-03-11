@@ -473,15 +473,24 @@ function createFloatingBubble() {
 }
 
 function showBubbleMessage(text, duration = 3000, isTranscript = false) {
+  console.log('[LingoScript] showBubbleMessage called:', text.slice(0, 30) + '...', 'isTranscript:', isTranscript);
+  
   const bubble = floatingBubble || createFloatingBubble();
   const message = document.getElementById('lingo-bubble-message');
-  if (!message) return;
+  
+  if (!message) {
+    console.error('[LingoScript] Bubble message element not found!');
+    return;
+  }
   
   // Skip if already showing same text (avoid flickering)
   const isAlreadyShowing = message.style.display === 'block' && 
                           message.style.opacity === '1' && 
                           message.textContent === text;
-  if (isAlreadyShowing) return;
+  if (isAlreadyShowing) {
+    console.log('[LingoScript] Already showing same text, skipping');
+    return;
+  }
   
   // Style differently for transcript vs status messages
   if (isTranscript) {
@@ -1106,6 +1115,7 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
     // Always run observer for bubble message sync, TTS only when isAutoPlay = true
     mutations.forEach(({ type, attributeName, target }) => {
       if (type === 'attributes' && (attributeName === 'class' || attributeName === 'data-purpose')) {
+        console.log('[LingoScript] Mutation detected:', attributeName, 'on', target.tagName);
         // Check if element is active (via class or data-purpose)
         const isActive = (activeClass && target.classList.contains(activeClass)) || 
                         target.dataset.purpose === 'transcript-cue-active';
@@ -1139,20 +1149,16 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
         }
 
         if (translatedText) {
-          console.log('[LingoScript] Transcript cue active:', translatedText.slice(0, 50) + '...');
+          console.log('[LingoScript] Active cue detected:', translatedText.slice(0, 50) + '...', 'enableBubbleText:', enableBubbleText);
 
-          // Always show in bubble message if enabled (regardless of autoplay)
-          if (enableBubbleText) {
-            // Close control panel if open
-            const bubble = floatingBubble || createFloatingBubble();
-            const panel = bubble.querySelector('#lingo-control-panel');
-            if (panel) panel.style.display = 'none';
-            
-            // Show message
-            setTimeout(() => {
-              showBubbleMessage(translatedText, 0, true); // duration=0 means persistent until next cue
-            }, 50);
-          }
+          // Always show in bubble message (create bubble if needed)
+          const bubble = floatingBubble || createFloatingBubble();
+          const panel = bubble.querySelector('#lingo-control-panel');
+          if (panel) panel.style.display = 'none';
+          
+          // Show message with debug logging
+          console.log('[LingoScript] Calling showBubbleMessage...');
+          showBubbleMessage(translatedText, 0, true);
 
           // Show overlay subtitle if enabled
           if (enableOverlay) {
@@ -1165,6 +1171,8 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
               speakText(translatedText, cfg);
             });
           }
+        } else {
+          console.log('[LingoScript] No translated text found for active cue');
         }
       }
     });
@@ -1624,12 +1632,16 @@ async function initiateTranslation(mode = 'batch') {
 
   // Always setup observer for bubble message sync (TTS only when autoplay enabled)
   if (containerSel && activeClassName) {
+    console.log('[LingoScript] Setting up autoplay observer with container:', containerSel, 'activeClass:', activeClassName);
     setupAutoPlay(containerSel, activeClassName, config.enableOverlay, config.enableBubbleText !== false);
     
     // Show volume warning only when autoplay is enabled
     if (isAutoPlay) {
       showVolumeWarning();
     }
+  } else {
+    console.warn('[LingoScript] Cannot setup observer - missing containerSel or activeClassName');
+    console.warn('[LingoScript] containerSel:', containerSel, 'activeClassName:', activeClassName);
   }
 
   // Enable lazy loading observer if enabled
@@ -1707,6 +1719,14 @@ async function initiateTranslation(mode = 'batch') {
       const translated = await translateBatch(batches[i], config);
       unmarkLoading(batches[i]);
       replaceText(translated, config.targetLanguage || 'Vietnamese', config.bilingualMode);
+      
+      // Show last translated text in bubble message (if no observer active)
+      if (translated && translated.length > 0 && floatingBubble) {
+        const lastText = translated[translated.length - 1].text;
+        if (lastText) {
+          showBubbleMessage(lastText, 0, true);
+        }
+      }
     } catch (err) {
       unmarkLoading(batches[i]);
       console.error(`[LingoScript] Batch ${i + 1}/${totalBatches} failed:`, err.message);
