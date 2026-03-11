@@ -1829,6 +1829,56 @@ async function initiateTranslation(mode = 'batch') {
   }
 
   console.log('[LingoScript] Translation complete!');
+  
+  // Keep observer running after translation completes
+  autoSetupObserverIfNeeded();
+}
+
+// =============================================================================
+// AUTO-SETUP OBSERVER FOR ALREADY TRANSLATED CONTENT
+// =============================================================================
+
+function autoSetupObserverIfNeeded() {
+  // Check if there are already translated elements on page
+  const translatedElements = document.querySelectorAll('[data-lingo-translated="true"]');
+  
+  if (translatedElements.length === 0) {
+    console.log('[LingoScript] No translated content found, observer not needed');
+    return;
+  }
+  
+  console.log('[LingoScript] Found', translatedElements.length, 'translated elements, setting up observer...');
+  
+  // Try to detect platform and setup observer
+  chrome.storage.sync.get([
+    'containerSelector', 'activeClass', 'enableOverlay', 'enableBubbleText'
+  ], (config) => {
+    let containerSel = (config.containerSelector || '').trim();
+    let activeClassName = (config.activeClass || '').trim();
+    
+    // Auto-detect if not configured
+    if (!containerSel || !activeClassName) {
+      const detected = autoDetectPlatform();
+      if (detected) {
+        containerSel = detected.container;
+        activeClassName = detected.activeClass;
+        console.log('[LingoScript] Auto-detected platform for observer:', detected.name);
+      }
+    }
+    
+    // Setup observer if we have the required selectors
+    if (containerSel && activeClassName) {
+      setupAutoPlay(
+        containerSel, 
+        activeClassName, 
+        config.enableOverlay, 
+        config.enableBubbleText !== false
+      );
+      console.log('[LingoScript] Observer auto-setup complete!');
+    } else {
+      console.warn('[LingoScript] Cannot auto-setup observer - missing selectors');
+    }
+  });
 }
 
 // =============================================================================
@@ -1843,11 +1893,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true; // keep message channel open for async response
 });
 
-// Initialize floating bubble on page load
+// Initialize floating bubble and auto-setup observer on page load
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => createFloatingBubble(), 1000);
+    setTimeout(() => {
+      createFloatingBubble();
+      // Auto-setup observer if there's already translated content
+      setTimeout(() => autoSetupObserverIfNeeded(), 500);
+    }, 1000);
   });
 } else {
-  setTimeout(() => createFloatingBubble(), 1000);
+  setTimeout(() => {
+    createFloatingBubble();
+    // Auto-setup observer if there's already translated content
+    setTimeout(() => autoSetupObserverIfNeeded(), 500);
+  }, 1000);
 }
