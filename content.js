@@ -51,8 +51,8 @@ const PLATFORM_DETECTORS = [
     name: 'Udemy',
     test: () => location.hostname.includes('udemy.com'),
     selector: '[data-purpose="cue-text"]',
-    activeClass: 'transcript--highlight-cue--ugVsE',
-    container: '.transcript--transcript-panel--JLceZ'
+    activeClass: '',  // Will detect via data-purpose="transcript-cue-active"
+    container: '[data-purpose="sidebar-content"]'
   },
   {
     name: 'edX',
