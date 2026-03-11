@@ -294,29 +294,61 @@ function createFloatingBubble() {
   
   floatingBubble.title = 'LingoScript Control';
 
-  // Message bubble (tooltip) - for transcript text display
+  // Message bubble (tooltip) - for transcript text display above bubble
   const messageBubble = document.createElement('div');
   messageBubble.id = 'lingo-bubble-message';
   messageBubble.style.cssText = [
-    'position:fixed', // Changed from absolute to fixed
-    'background:#1a1a2e',
+    'position:fixed',
+    'background:#2c3e50',
     'color:#e0e0e0',
-    'padding:12px 16px',
-    'border-radius:8px',
-    'font-size:14px',
-    'line-height:1.5',
+    'padding:14px 18px',
+    'border-radius:10px',
+    'font-size:15px',
+    'line-height:1.6',
     'white-space:normal',
     'word-wrap:break-word',
-    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
+    'box-shadow:0 4px 20px rgba(0,0,0,0.5)',
     'display:none',
     'max-width:400px',
     'min-width:200px',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    'border:2px solid #e94560',
-    'z-index:2147483649', // Higher than bubble
-    'pointer-events:none' // Don't block clicks
+    'border:2px solid #3498db',
+    'z-index:2147483649',
+    'pointer-events:none',
+    'text-align:center'
   ].join(';');
-  document.body.appendChild(messageBubble); // Append to body instead of bubble
+  document.body.appendChild(messageBubble);
+  
+  // Add arrow pointer style
+  const arrowStyle = document.createElement('style');
+  arrowStyle.textContent = `
+    #lingo-bubble-message::after {
+      content: '';
+      position: absolute;
+      bottom: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-top: 10px solid #3498db;
+    }
+    #lingo-bubble-message::before {
+      content: '';
+      position: absolute;
+      bottom: -7px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid #2c3e50;
+      z-index: 1;
+    }
+  `;
+  document.head.appendChild(arrowStyle);
 
   // Control panel (expands when clicked)
   const controlPanel = document.createElement('div');
@@ -445,11 +477,6 @@ function showBubbleMessage(text, duration = 3000, isTranscript = false) {
   const message = document.getElementById('lingo-bubble-message');
   if (!message) return;
   
-  // Position message next to bubble
-  const bubbleRect = bubble.getBoundingClientRect();
-  message.style.left = (bubbleRect.left - 420) + 'px'; // 400px width + 20px gap
-  message.style.top = bubbleRect.top + 'px';
-  
   // Style differently for transcript vs status messages
   if (isTranscript) {
     message.style.background = '#2c3e50';
@@ -470,16 +497,33 @@ function showBubbleMessage(text, duration = 3000, isTranscript = false) {
   message.textContent = text;
   message.style.display = 'block';
   message.style.opacity = '0';
-  message.style.transition = 'opacity 0.3s ease';
+  message.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+  message.style.transform = 'translateY(10px)'; // Start slightly lower for animation
   
-  // Fade in
+  // Wait for render to get actual dimensions
+  requestAnimationFrame(() => {
+    const bubbleRect = bubble.getBoundingClientRect();
+    const messageRect = message.getBoundingClientRect();
+    
+    // Center horizontally with bubble
+    const centerX = bubbleRect.left + bubbleRect.width / 2;
+    message.style.left = (centerX - messageRect.width / 2) + 'px';
+    
+    // Position above bubble with 18px gap (includes arrow height)
+    message.style.bottom = (window.innerHeight - bubbleRect.top + 18) + 'px';
+    message.style.top = 'auto';
+  });
+  
+  // Fade in with slide up animation
   setTimeout(() => {
     message.style.opacity = '1';
+    message.style.transform = 'translateY(0)';
   }, 10);
   
   if (duration > 0) {
     setTimeout(() => {
       message.style.opacity = '0';
+      message.style.transform = 'translateY(-10px)'; // Slide up when fading out
       setTimeout(() => {
         message.style.display = 'none';
       }, 300);
