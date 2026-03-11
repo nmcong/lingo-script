@@ -1207,7 +1207,6 @@ async function initiateTranslation(mode = 'batch') {
     setProgress(totalBatches, totalBatches);
   }
 
-  setProgress(total, total);
   console.log('[LingoScript] ✓ Translation complete!');
 }
 
