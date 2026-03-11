@@ -52,7 +52,7 @@ const PLATFORM_DETECTORS = [
     test: () => location.hostname.includes('udemy.com'),
     selector: '[data-purpose="cue-text"]',
     activeClass: 'transcript--highlight-cue--ugVsE',
-    container: '[data-purpose="sidebar-content"]'
+    container: '.transcript--transcript-panel--JLceZ'
   },
   {
     name: 'edX',
@@ -457,9 +457,19 @@ function setupAutoPlay(containerSelector, activeClass) {
   autoPlayObserver = new MutationObserver((mutations) => {
     if (!isAutoPlay) return;
     mutations.forEach(({ type, attributeName, target }) => {
-      if (type === 'attributes' && attributeName === 'class') {
-        if (target.classList.contains(activeClass) && target.dataset.lingoTranslated) {
-          const text = target.dataset.lingoText || target.innerText.replace('🔊', '').trim();
+      if (type === 'attributes' && (attributeName === 'class' || attributeName === 'data-purpose')) {
+        // Check if element is active (via class or data-purpose)
+        const isActive = target.classList.contains(activeClass) || 
+                        target.dataset.purpose === 'transcript-cue-active';
+        
+        // For Udemy: check if child span has the translated text
+        let translatedElement = target;
+        if (!target.dataset.lingoTranslated && target.querySelector) {
+          translatedElement = target.querySelector('[data-lingo-translated="true"]');
+        }
+        
+        if (isActive && translatedElement && translatedElement.dataset.lingoTranslated) {
+          const text = translatedElement.dataset.lingoText || translatedElement.innerText.replace('🔊', '').trim();
           if (text) {
             chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
               speakText(text, cfg);
@@ -473,7 +483,7 @@ function setupAutoPlay(containerSelector, activeClass) {
   autoPlayObserver.observe(container, {
     attributes: true,
     subtree: true,
-    attributeFilter: ['class']
+    attributeFilter: ['class', 'data-purpose']
   });
   console.log('[LingoScript] Auto-play observer active.');
 }
