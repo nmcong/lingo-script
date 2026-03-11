@@ -104,13 +104,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const model = ollamaModel.value === 'custom' ? ollamaModelCustom.value.trim() : ollamaModel.value;
 
     if (!apiKey) {
-      testStatus.textContent = '⚠️ Nhập API Key trước';
+      testStatus.textContent = 'Nhập API Key trước';
       testStatus.style.color = '#e94560';
       return;
     }
 
     testConnBtn.disabled = true;
-    testConnBtn.textContent = '⏳';
+    testConnBtn.innerHTML = '<i data-feather="loader" style="width:16px;height:16px;"></i>';
+    if (window.featherReplace) window.featherReplace();
     testStatus.textContent = 'Đang kiểm tra...';
     testStatus.style.color = '#8898aa';
 
@@ -121,13 +122,14 @@ document.addEventListener('DOMContentLoaded', () => {
       model
     }, (response) => {
       testConnBtn.disabled = false;
-      testConnBtn.textContent = '🔌';
+      testConnBtn.innerHTML = '<i data-feather="zap" style="width:16px;height:16px;"></i> Test';
+      if (window.featherReplace) window.featherReplace();
 
       if (response && response.success) {
-        testStatus.textContent = '✅ Kết nối thành công!';
+        testStatus.textContent = 'Kết nối thành công!';
         testStatus.style.color = '#28a745';
       } else {
-        testStatus.textContent = '❌ ' + (response?.error || 'Kết nối thất bại');
+        testStatus.textContent = (response?.error || 'Kết nối thất bại');
         testStatus.style.color = '#e94560';
       }
 
@@ -141,10 +143,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chrome.runtime.sendMessage({ action: 'CLEAR_CACHE' }, (response) => {
       if (response && response.success) {
-        showStatus('✅ Đã xóa cache!', false);
+        showStatus('Đã xóa cache!', false);
         loadCacheStats();
       } else {
-        showStatus('❌ Lỗi xóa cache', true);
+        showStatus('Lỗi xóa cache', true);
       }
     });
   });
@@ -163,13 +165,13 @@ document.addEventListener('DOMContentLoaded', () => {
   loadCacheStats();
   
   // Initialize Feather icons
-  if (window.feather) {
-    feather.replace();
+  if (window.featherReplace) {
+    window.featherReplace();
   } else {
     // Wait for script to load
     setTimeout(() => {
-      if (window.feather) feather.replace();
-    }, 500);
+      if (window.featherReplace) window.featherReplace();
+    }, 100);
   }
 
   // ── Load saved config ──────────────────────────────────────────────────────
@@ -224,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const badge = $('detectedBadge');
 
       if (detected) {
-        badge.textContent = `🎯 Phát hiện: ${detected.name}`;
+        badge.textContent = `Phát hiện: ${detected.name}`;
         badge.style.display = 'block';
 
         // Auto-select chỉ khi user chưa tùy chỉnh (dùng mặc định)

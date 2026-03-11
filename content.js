@@ -383,18 +383,9 @@ function createFloatingBubble() {
 
   document.body.appendChild(floatingBubble);
   
-  // Load Feather icons if not already loaded
-  if (!window.feather) {
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/feather-icons';
-    script.onload = () => {
-      if (window.feather) {
-        window.feather.replace();
-      }
-    };
-    document.head.appendChild(script);
-  } else {
-    window.feather.replace();
+  // Replace Feather icons
+  if (window.featherReplace) {
+    window.featherReplace();
   }
   
   return floatingBubble;
@@ -504,7 +495,7 @@ function updateBubbleState(state) {
       setTimeout(() => {
         icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
         bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
-        if (window.feather) window.feather.replace();
+        if (window.featherReplace) window.featherReplace();
       }, 3000);
       break;
     case 'error':
@@ -514,14 +505,14 @@ function updateBubbleState(state) {
       setTimeout(() => {
         icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
         bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
-        if (window.feather) window.feather.replace();
+        if (window.featherReplace) window.featherReplace();
       }, 5000);
       break;
   }
   
   // Replace Feather icons
-  if (window.feather) {
-    window.feather.replace();
+  if (window.featherReplace) {
+    window.featherReplace();
   }
 }
 
@@ -576,8 +567,8 @@ function addSegmentBadge(element, status) {
   badge.title = status.charAt(0).toUpperCase() + status.slice(1);
   
   // Replace icons
-  if (window.feather) {
-    window.feather.replace();
+  if (window.featherReplace) {
+    window.featherReplace();
   }
 
   element.insertBefore(badge, element.firstChild);
@@ -760,8 +751,8 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
       el.appendChild(btn);
       
       // Replace icons
-      if (window.feather) {
-        window.feather.replace();
+      if (window.featherReplace) {
+        window.featherReplace();
       }
     }
   });
@@ -787,19 +778,27 @@ function showVolumeWarning() {
   ].join(';');
 
   toast.innerHTML = `
-    <div>🎙️ <b>Gợi ý:</b> Giảm âm lượng video gốc để nghe giọng AI rõ hơn!</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <i data-feather="mic" style="width:18px;height:18px;color:#e94560;"></i>
+      <span><b>Gợi ý:</b> Giảm âm lượng video gốc để nghe giọng AI rõ hơn!</span>
+    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button id="lingo-btn-lower"
-        style="background:#28a745;color:#fff;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;">
-        🔉 Giảm 10%
+        style="background:#28a745;color:#fff;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:4px;">
+        <i data-feather="volume-1" style="width:14px;height:14px;"></i> Giảm 10%
       </button>
       <button id="lingo-btn-close"
-        style="background:#333;color:#e0e0e0;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;">
-        Đóng
+        style="background:#333;color:#e0e0e0;border:none;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:4px;">
+        <i data-feather="x" style="width:14px;height:14px;"></i> Đóng
       </button>
     </div>
   `;
   document.body.appendChild(toast);
+  
+  // Replace icons
+  if (window.featherReplace) {
+    window.featherReplace();
+  }
 
   const dismiss = () => {
     toast.style.opacity = '0';
@@ -810,10 +809,12 @@ function showVolumeWarning() {
     const video = document.querySelector('video');
     if (video) {
       video.volume = Math.max(0, video.volume - 0.1);
-      toast.querySelector('div').textContent = '✅ Đã giảm âm lượng video!';
+      toast.querySelector('div').innerHTML = '<i data-feather="check" style="width:16px;height:16px;color:#28a745;"></i> Đã giảm âm lượng video!';
+      if (window.featherReplace) window.featherReplace();
       setTimeout(dismiss, 2000);
     } else {
-      toast.querySelector('div').innerHTML = '⚠️ Không tìm thấy video – vui lòng giảm thủ công.';
+      toast.querySelector('div').innerHTML = '<i data-feather="alert-circle" style="width:16px;height:16px;color:#ffc107;"></i> Không tìm thấy video – vui lòng giảm thủ công.';
+      if (window.featherReplace) window.featherReplace();
       setTimeout(dismiss, 3000);
     }
   });
@@ -1167,7 +1168,7 @@ function setupBubbleControls(batches, config) {
 
 function setupRetryHandler(element, id, text, config) {
   element.style.cursor = 'pointer';
-  element.title = '❌ Dịch thất bại - Click để thử lại';
+  element.title = 'Dịch thất bại - Click để thử lại';
   
   element.onclick = async () => {
     element.style.opacity = '0.4';
@@ -1190,12 +1191,12 @@ function setupRetryHandler(element, id, text, config) {
       element.style.opacity = '1';
       element.style.cursor = '';
       replaceText(retryTranslated, retryConfig.targetLanguage || 'Vietnamese', retryConfig.bilingualMode);
-      showBubbleMessage('✅ Retry thành công!', 2000);
+      showBubbleMessage('Retry thành công!', 2000);
     } catch (e) {
       element.style.opacity = '1';
       element.style.cursor = 'pointer';
       addSegmentBadge(element, 'error');
-      showBubbleMessage('❌ Retry thất bại', 2000);
+      showBubbleMessage('Retry thất bại', 2000);
     }
   };
 }
@@ -1242,7 +1243,7 @@ async function initiateTranslation(mode = 'batch') {
       selector        = detected.selector;
       containerSel    = detected.container;
       activeClassName = detected.activeClass;
-      showLingoToast(`🎯 Tự động phát hiện: ${detected.name}`);
+      showLingoToast(`Tự động phát hiện: ${detected.name}`);
       console.log('[LingoScript] Auto-detected:', detected.name);
     } else {
       showLingoToast('Không nhận ra nền tảng. Hãy nhập CSS Selector thủ công trong Extension!', true);
@@ -1261,7 +1262,7 @@ async function initiateTranslation(mode = 'batch') {
       containerSel    = detected.container;
       activeClassName = detected.activeClass;
       batches = collectAndChunk(selector, 20);
-      if (batches.length) showLingoToast(`🎯 Dùng selector tự động: ${detected.name}`);
+      if (batches.length) showLingoToast(`Dùng selector tự động: ${detected.name}`);
     }
   }
 
@@ -1297,7 +1298,7 @@ async function initiateTranslation(mode = 'batch') {
   const bubble = createFloatingBubble();
   updateBubbleState('translating');
   updateBubbleProgress(0, totalBatches);
-  showBubbleMessage('🚀 Bắt đầu dịch...', 2000);
+  showBubbleMessage('Bắt đầu dịch...', 2000);
 
   // Setup button handlers
   setupBubbleControls(batches, config);
@@ -1306,7 +1307,7 @@ async function initiateTranslation(mode = 'batch') {
   if (config.singleBatchMode && batches.length > 1) {
     const allItems = batches.flat();
     markLoading(allItems, 'translating');
-    showBubbleMessage(`📤 Đang gửi ${allItems.length} đoạn cho AI...`, 0);
+    showBubbleMessage(`Đang gửi ${allItems.length} đoạn cho AI...`, 0);
 
     try {
       const translated = await translateBatch(allItems, config);
@@ -1316,7 +1317,7 @@ async function initiateTranslation(mode = 'batch') {
       updateBubbleState('completed');
       updateBubbleProgress(totalBatches, totalBatches);
       setProgress(totalBatches, totalBatches);
-      console.log('[LingoScript] ✓ Single-batch translation complete!');
+      console.log('[LingoScript] Single-batch translation complete!');
     } catch (err) {
       console.error('[LingoScript] Single-batch failed:', err.message);
       allItems.forEach(({ id, text }) => {
@@ -1327,7 +1328,7 @@ async function initiateTranslation(mode = 'batch') {
         }
       });
       updateBubbleState('error');
-      showBubbleMessage('❌ Dịch thất bại!', 3000);
+      showBubbleMessage('Dịch thất bại!', 3000);
     }
     
     isTranslating = false;
@@ -1347,14 +1348,14 @@ async function initiateTranslation(mode = 'batch') {
     if (shouldCancel) {
       console.log('[LingoScript] Translation cancelled by user');
       updateBubbleState('idle');
-      showBubbleMessage('⏹️ Đã dừng dịch', 2000);
+      showBubbleMessage('Đã dừng dịch', 2000);
       break;
     }
 
     setProgress(i, totalBatches);
     updateBubbleProgress(i + 1, totalBatches);
     markLoading(batches[i], 'translating');
-    showBubbleMessage(`🔄 Đang dịch batch ${i + 1}/${totalBatches}...`, 0);
+    showBubbleMessage(`Đang dịch batch ${i + 1}/${totalBatches}...`, 0);
 
     try {
       const translated = await translateBatch(batches[i], config);
@@ -1372,7 +1373,7 @@ async function initiateTranslation(mode = 'batch') {
           setupRetryHandler(el, id, text, config);
         }
       });
-      showBubbleMessage(`⚠️ Batch ${i + 1} thất bại`, 2000);
+      showBubbleMessage(`Batch ${i + 1} thất bại`, 2000);
     }
 
     // Rate-limit delay
@@ -1388,7 +1389,7 @@ async function initiateTranslation(mode = 'batch') {
     setProgress(totalBatches, totalBatches);
   }
 
-  console.log('[LingoScript] ✓ Translation complete!');
+  console.log('[LingoScript] Translation complete!');
 }
 
 // =============================================================================

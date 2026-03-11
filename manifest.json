@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LingoScript",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Dịch transcript trực tiếp trên trang web với AI (Gemini, OpenAI, Claude, Ollama)",
   "permissions": [
     "storage",
@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["feather-icons.js", "content.js"],
       "run_at": "document_idle"
     }
   ]
