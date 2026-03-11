@@ -843,11 +843,8 @@ function replaceText(translatedBatch, targetLang, bilingualMode = false) {
     el.dataset.lingoText = item.text;
     el.title = item.fromCache ? '💾 Từ cache' : '✨ Vừa dịch';
 
-    // Show translated text in bubble message if autoplay is not active
-    // (if autoplay is active, it will be shown by the autoPlayObserver)
-    if (floatingBubble && !isAutoPlay) {
-      showBubbleMessage(item.text, 0, true);
-    }
+    // Don't show in bubble message here - let autoPlayObserver handle it
+    // This prevents conflicts and ensures sync with video playback
 
     // Add speaker button if not exists
     if (!existingSpeaker) {
@@ -1106,7 +1103,7 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
   }
 
   autoPlayObserver = new MutationObserver((mutations) => {
-    if (!isAutoPlay) return;
+    // Always run observer for bubble message sync, TTS only when isAutoPlay = true
     mutations.forEach(({ type, attributeName, target }) => {
       if (type === 'attributes' && (attributeName === 'class' || attributeName === 'data-purpose')) {
         // Check if element is active (via class or data-purpose)
@@ -1142,9 +1139,9 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
         }
 
         if (translatedText) {
-          console.log('[LingoScript] Auto-play:', translatedText.slice(0, 50) + '...', 'enableBubbleText:', enableBubbleText);
+          console.log('[LingoScript] Transcript cue active:', translatedText.slice(0, 50) + '...');
 
-          // Show in bubble message if enabled (always close panel first)
+          // Always show in bubble message if enabled (regardless of autoplay)
           if (enableBubbleText) {
             // Close control panel if open
             const bubble = floatingBubble || createFloatingBubble();
@@ -1154,7 +1151,7 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
             // Show message
             setTimeout(() => {
               showBubbleMessage(translatedText, 0, true); // duration=0 means persistent until next cue
-            }, 100);
+            }, 50);
           }
 
           // Show overlay subtitle if enabled
@@ -1162,10 +1159,12 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, en
             showOverlaySubtitle(translatedText);
           }
 
-          // Speak text
-          chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
-            speakText(translatedText, cfg);
-          });
+          // TTS only when autoplay is enabled
+          if (isAutoPlay) {
+            chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
+              speakText(translatedText, cfg);
+            });
+          }
         }
       }
     });
@@ -1623,9 +1622,14 @@ async function initiateTranslation(mode = 'batch') {
 
   isAutoPlay = config.isAutoPlayEnabled || false;
 
-  if (isAutoPlay) {
-    showVolumeWarning();
+  // Always setup observer for bubble message sync (TTS only when autoplay enabled)
+  if (containerSel && activeClassName) {
     setupAutoPlay(containerSel, activeClassName, config.enableOverlay, config.enableBubbleText !== false);
+    
+    // Show volume warning only when autoplay is enabled
+    if (isAutoPlay) {
+      showVolumeWarning();
+    }
   }
 
   // Enable lazy loading observer if enabled

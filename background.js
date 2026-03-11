@@ -421,24 +421,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           formattedText += prefix + item.text + '\n';
         });
 
-        const summarizePrompt = `Bạn là chuyên gia phân tích nội dung video. Hãy tóm tắt chi tiết nội dung transcript sau đây bằng ${config.targetLanguage || 'Vietnamese'}.
+        // Custom system prompt for summarization
+        const systemPrompt = `Bạn là chuyên gia phân tích nội dung video. Nhiệm vụ của bạn là tóm tắt chi tiết transcript video bằng ${config.targetLanguage || 'Vietnamese'}.
 
 YÊU CẦU:
 - Chia thành 5-8 phần chính với tiêu đề rõ ràng
 - Mỗi phần ghi rõ timestamp (nếu có) và tóm tắt chi tiết 2-3 câu
-- Format: **[Timestamp] Tiêu đề phần**\\nNội dung tóm tắt...\\n\\n
+- Format: **[Timestamp] Tiêu đề phần**
+Nội dung tóm tắt...
+
 - Sử dụng bullet points khi cần liệt kê các ý chính
 - Tổng cộng khoảng 300-500 từ
+- CHỈ TRẢ VỀ NỘI DUNG TÓM TẮT, KHÔNG GIẢI THÍCH HAY THÊM COMMENT`;
 
-TRANSCRIPT:
-${formattedText}`;
-
-        // Use translation API for summarization
+        // Use custom system prompt for better summarization
         const response = await provider.translateChunk(
-          [{ id: 0, text: summarizePrompt }],
+          [{ id: 0, text: formattedText }],
           config.llmApiKey,
           config.targetLanguage || 'Vietnamese',
-          null,
+          systemPrompt, // Use custom system prompt instead of default translation prompt
           config.resolvedOllamaModel
         );
 
