@@ -14,20 +14,6 @@ const LANG_CODE = {
   Spanish:    'es-ES'
 };
 
-// ── System prompt (shared across all LLM providers) ──────────────────────────
-const systemPrompt = (lang) =>
-  `Bạn là một hệ thống dịch thuật máy tính siêu tốc và chính xác.
-Nhiệm vụ:
-1. Nhận một mảng JSON chứa các đối tượng định dạng: [{"id": số, "text": "văn bản gốc"}]. Các đoạn liên tiếp tạo thành ngữ cảnh hoàn chỉnh.
-2. Dịch phần "text" sang ${lang}. Duy trì văn phong tự nhiên, liền mạch giữa các đoạn.
-3. Giữ nguyên giá trị "id" tương ứng với mỗi đoạn.
-
-Ràng buộc TUYỆT ĐỐI:
-- CHỈ trả về một mảng JSON hợp lệ.
-- KHÔNG bọc trong markdown (không dùng \`\`\`json).
-- KHÔNG giải thích, KHÔNG thêm bất kỳ từ ngữ nào bên ngoài mảng JSON.
-- Nếu một đoạn "text" trống hoặc là ký tự đặc biệt, hãy giữ nguyên.`;
-
 // ── Node map: id → DOM element ────────────────────────────────────────────────
 let nodeMap = new Map();
 
@@ -75,112 +61,31 @@ function autoDetectPlatform() {
 }
 
 // =============================================================================
-// LLM PROVIDERS
+// TRANSLATION VIA BACKGROUND WORKER (Secure API calls)
 // =============================================================================
 
-const GeminiProvider = {
-  async translateChunk(batch, apiKey, lang) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt(lang) }] },
-        contents: [{ parts: [{ text: JSON.stringify(batch) }] }],
-        generationConfig: { response_mime_type: 'application/json' }
-      })
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Gemini ${res.status}: ${err.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    return JSON.parse(data.candidates[0].content.parts[0].text);
-  }
-};
+// Translation state
+let isTranslating = false;
+let shouldCancel = false;
 
-const OpenAIProvider = {
-  async translateChunk(batch, apiKey, lang) {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt(lang) },
-          { role: 'user', content: `{"data": ${JSON.stringify(batch)}}` }
-        ]
-      })
+async function translateBatch(batch, config) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      action: 'TRANSLATE_BATCH',
+      batch,
+      config,
+      url: location.href
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (response.success) {
+        resolve(response.data);
+      } else {
+        reject(new Error(response.error || 'Translation failed'));
+      }
     });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI ${res.status}: ${err.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
-    // Handle both direct array and {data:[...]} wrapper responses
-    return Array.isArray(parsed) ? parsed : (parsed.data || parsed.translations || Object.values(parsed)[0]);
-  }
-};
-
-const ClaudeProvider = {
-  async translateChunk(batch, apiKey, lang) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4096,
-        system: systemPrompt(lang),
-        messages: [{ role: 'user', content: JSON.stringify(batch) }]
-      })
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Claude ${res.status}: ${err.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    return JSON.parse(data.content[0].text);
-  }
-};
-
-const OllamaProvider = {
-  async translateChunk(batch, apiKey, lang, model) {
-    const res = await fetch('https://ollama.com/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model || 'gpt-oss:120b',
-        stream: false,
-        messages: [
-          { role: 'system', content: systemPrompt(lang) },
-          { role: 'user',   content: JSON.stringify(batch) }
-        ]
-      })
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Ollama ${res.status}: ${err.slice(0, 200)}`);
-    }
-    const data = await res.json();
-    const text = data.message?.content || data.choices?.[0]?.message?.content || '';
-    return JSON.parse(text);
-  }
-};
-
-const LLM = { gemini: GeminiProvider, openai: OpenAIProvider, claude: ClaudeProvider, ollama: OllamaProvider };
+  });
+}
 
 // =============================================================================
 // TTS PROVIDERS
@@ -335,6 +240,39 @@ function setProgress(current, total) {
   if (pct >= 100) setTimeout(() => bar.remove(), 1200);
 }
 
+// Cancel button
+function addCancelButton() {
+  if (document.getElementById('lingo-cancel-btn')) return;
+  
+  const btn = document.createElement('button');
+  btn.id = 'lingo-cancel-btn';
+  btn.innerHTML = '⏹️ Dừng dịch';
+  btn.style.cssText = [
+    'position:fixed', 'top:50px', 'right:20px',
+    'background:#e74c3c', 'color:#fff', 'border:none',
+    'padding:10px 16px', 'border-radius:6px', 'cursor:pointer',
+    'z-index:2147483647', 'font-size:13px', 'font-weight:500',
+    'box-shadow:0 2px 10px rgba(231,76,60,0.4)',
+    'transition:all 0.2s ease'
+  ].join(';');
+  
+  btn.onmouseenter = () => { btn.style.background = '#c0392b'; btn.style.transform = 'scale(1.05)'; };
+  btn.onmouseleave = () => { btn.style.background = '#e74c3c'; btn.style.transform = 'scale(1)'; };
+  btn.onclick = () => {
+    shouldCancel = true;
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.innerHTML = '⏳ Đang dừng...';
+  };
+  
+  document.body.appendChild(btn);
+}
+
+function removeCancelButton() {
+  const btn = document.getElementById('lingo-cancel-btn');
+  if (btn) btn.remove();
+}
+
 // Mark segments as loading
 function markLoading(batch) {
   batch.forEach(({ id }) => {
@@ -351,35 +289,65 @@ function unmarkLoading(batch) {
 }
 
 // Replace text + add speaker button
-function replaceText(translatedBatch, targetLang) {
+function replaceText(translatedBatch, targetLang, bilingualMode = false) {
   translatedBatch.forEach(item => {
     if (!item || !item.text) return;
     const el = nodeMap.get(item.id);
     if (!el) return;
 
-    el.innerText = item.text;
-    el.style.color = '#2e7d32';
+    // Save original text if bilingual mode
+    if (!el.dataset.lingoOriginal) {
+      el.dataset.lingoOriginal = el.innerText.trim();
+    }
+
+    if (bilingualMode) {
+      // Bilingual: Keep original, add translation below
+      el.innerHTML = '';
+      
+      const originalSpan = document.createElement('div');
+      originalSpan.style.cssText = 'color:#666;font-size:0.85em;line-height:1.4;margin-bottom:4px;';
+      originalSpan.textContent = el.dataset.lingoOriginal;
+      
+      const translatedSpan = document.createElement('div');
+      translatedSpan.style.cssText = 'color:#2e7d32;font-weight:500;line-height:1.5;';
+      translatedSpan.textContent = item.text;
+      
+      el.appendChild(originalSpan);
+      el.appendChild(translatedSpan);
+    } else {
+      // Replace mode
+      el.innerText = item.text;
+      el.style.color = '#2e7d32';
+    }
+
     el.dataset.lingoTranslated = 'true';
     el.dataset.lingoText = item.text;
+    el.title = item.fromCache ? '💾 Từ cache' : '✨ Vừa dịch';
 
     // Speaker button 🔊
-    const btn = document.createElement('span');
-    btn.className = 'lingo-speak-btn';
-    btn.textContent = ' 🔊';
-    btn.title = 'Nghe đoạn này';
-    btn.style.cssText = 'cursor:pointer;font-size:0.8em;opacity:0.6;transition:opacity 0.15s,transform 0.15s;';
-    btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
-    btn.addEventListener('mouseleave', () => { btn.style.opacity = '0.6'; });
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      btn.style.transform = 'scale(1.3)';
-      setTimeout(() => { btn.style.transform = 'scale(1)'; }, 200);
-      chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
-        speakText(item.text, cfg);
+    if (!el.querySelector('.lingo-speak-btn')) {
+      const btn = document.createElement('span');
+      btn.className = 'lingo-speak-btn';
+      btn.textContent = ' 🔊';
+      btn.title = 'Nghe đoạn này';
+      btn.style.cssText = 'cursor:pointer;font-size:0.8em;opacity:0.6;transition:opacity 0.15s,transform 0.15s;margin-left:4px;';
+      btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
+      btn.addEventListener('mouseleave', () => { btn.style.opacity = '0.6'; });
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        btn.style.transform = 'scale(1.3)';
+        setTimeout(() => { btn.style.transform = 'scale(1)'; }, 200);
+        chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
+          speakText(item.text, cfg);
+        });
       });
-    });
 
-    el.appendChild(btn);
+      if (bilingualMode) {
+        el.lastChild.appendChild(btn);
+      } else {
+        el.appendChild(btn);
+      }
+    }
   });
 }
 
@@ -439,14 +407,154 @@ function showVolumeWarning() {
 }
 
 // =============================================================================
+// OVERLAY SUBTITLES (Display translations on video)
+// =============================================================================
+
+let overlayElement = null;
+
+function createOverlay() {
+  if (overlayElement) return overlayElement;
+
+  overlayElement = document.createElement('div');
+  overlayElement.id = 'lingo-subtitle-overlay';
+  overlayElement.style.cssText = [
+    'position:fixed',
+    'bottom:80px',
+    'left:50%',
+    'transform:translateX(-50%)',
+    'background:rgba(0,0,0,0.85)',
+    'color:#fff',
+    'padding:12px 20px',
+    'border-radius:8px',
+    'font-size:18px',
+    'font-weight:500',
+    'line-height:1.6',
+    'max-width:80%',
+    'text-align:center',
+    'z-index:2147483646',
+    'pointer-events:none',
+    'box-shadow:0 4px 20px rgba(0,0,0,0.7)',
+    'display:none',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
+  ].join(';');
+
+  document.body.appendChild(overlayElement);
+  return overlayElement;
+}
+
+function showOverlaySubtitle(text, duration = 5000) {
+  const overlay = createOverlay();
+  overlay.textContent = text;
+  overlay.style.display = 'block';
+  overlay.style.animation = 'none';
+  
+  setTimeout(() => {
+    overlay.style.animation = 'fadeIn 0.3s ease';
+  }, 10);
+
+  // Auto-hide after duration
+  setTimeout(() => {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.transition = '';
+    }, 300);
+  }, duration);
+}
+
+// Inject animation keyframes
+if (!document.getElementById('lingo-overlay-styles')) {
+  const style = document.createElement('style');
+  style.id = 'lingo-overlay-styles';
+  style.textContent = `
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// =============================================================================
+// LAZY LOADING OBSERVER (Auto-translate new transcript segments)
+// =============================================================================
+
+let lazyLoadObserver = null;
+let pendingTranslations = [];
+let translationTimer = null;
+
+function setupLazyLoading(containerSelector, selector, config) {
+  if (lazyLoadObserver) {
+    lazyLoadObserver.disconnect();
+    lazyLoadObserver = null;
+  }
+  
+  const container = document.querySelector(containerSelector);
+  if (!container) return;
+
+  let nextId = nodeMap.size;
+
+  lazyLoadObserver = new MutationObserver((mutations) => {
+    const newElements = [];
+    
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.nodeType === 1) {
+          const matches = node.matches && node.matches(selector) 
+            ? [node] 
+            : (node.querySelectorAll ? Array.from(node.querySelectorAll(selector)) : []);
+          
+          matches.forEach(el => {
+            if (!el.dataset.lingoTranslated && !el.dataset.lingoPending) {
+              const text = el.innerText.trim();
+              if (text) {
+                el.dataset.lingoPending = 'true';
+                nodeMap.set(nextId, el);
+                newElements.push({ id: nextId, text });
+                nextId++;
+              }
+            }
+          });
+        }
+      });
+    });
+
+    if (newElements.length > 0) {
+      console.log(`[LingoScript] Lazy-load detected ${newElements.length} new segments`);
+      pendingTranslations.push(...newElements);
+      
+      // Debounce: wait 2s for more segments before translating
+      clearTimeout(translationTimer);
+      translationTimer = setTimeout(() => {
+        if (pendingTranslations.length > 0) {
+          const batch = pendingTranslations.splice(0);
+          translateBatch(batch, config)
+            .then(translated => replaceText(translated, config.targetLanguage, config.bilingualMode))
+            .catch(err => console.error('[LingoScript] Lazy translation failed:', err));
+        }
+      }, 2000);
+    }
+  });
+
+  lazyLoadObserver.observe(container, {
+    childList: true,
+    subtree: true
+  });
+  
+  console.log('[LingoScript] Lazy-loading observer active');
+}
+
+// =============================================================================
 // AUTO-PLAY OBSERVER
 // =============================================================================
 
 let autoPlayObserver = null;
 
-function setupAutoPlay(containerSelector, activeClass) {
+function setupAutoPlay(containerSelector, activeClass, enableOverlay = false) {
   if (autoPlayObserver) { autoPlayObserver.disconnect(); autoPlayObserver = null; }
-  if (!containerSelector || !activeClass) return;
+  if (!containerSelector) return;
 
   const container = document.querySelector(containerSelector);
   if (!container) {
@@ -459,7 +567,7 @@ function setupAutoPlay(containerSelector, activeClass) {
     mutations.forEach(({ type, attributeName, target }) => {
       if (type === 'attributes' && (attributeName === 'class' || attributeName === 'data-purpose')) {
         // Check if element is active (via class or data-purpose)
-        const isActive = target.classList.contains(activeClass) || 
+        const isActive = (activeClass && target.classList.contains(activeClass)) || 
                         target.dataset.purpose === 'transcript-cue-active';
         
         // For Udemy: check if child span has the translated text
@@ -471,6 +579,12 @@ function setupAutoPlay(containerSelector, activeClass) {
         if (isActive && translatedElement && translatedElement.dataset.lingoTranslated) {
           const text = translatedElement.dataset.lingoText || translatedElement.innerText.replace('🔊', '').trim();
           if (text) {
+            // Show overlay subtitle
+            if (enableOverlay) {
+              showOverlaySubtitle(text);
+            }
+
+            // Speak text
             chrome.storage.sync.get(['ttsProvider', 'ttsApiKey', 'targetLanguage'], (cfg) => {
               speakText(text, cfg);
             });
@@ -498,7 +612,8 @@ async function initiateTranslation() {
       'llmProvider', 'llmApiKey', 'targetLanguage',
       'ollamaModel', 'ollamaModelCustom',
       'ttsProvider', 'ttsApiKey', 'isAutoPlayEnabled',
-      'transcriptSelector', 'activeClass', 'containerSelector'
+      'transcriptSelector', 'activeClass', 'containerSelector',
+      'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay'
     ], resolve);
   });
 
@@ -514,17 +629,8 @@ async function initiateTranslation() {
     return;
   }
 
-  // Fix: trim() phòng trường hợp giá trị có whitespace/BOM từ storage
-  const providerKey = (config.llmProvider || 'gemini').trim();
-  const translator = LLM[providerKey];
-  if (!translator) {
-    showLingoToast(
-      `Provider "${providerKey}" không được nhận. Hãy tải lại trang (F5) rồi thử lại!`,
-      true
-    );
-    console.error('[LingoScript] Unknown provider:', providerKey, '| Available:', Object.keys(LLM));
-    return;
-  }
+  // Reset cancel state
+  shouldCancel = false;
 
   // Auto-detect platform nếu chưa cấu hình selector
   let selector      = (config.transcriptSelector || '').trim();
@@ -572,74 +678,74 @@ async function initiateTranslation() {
 
   if (isAutoPlay) {
     showVolumeWarning();
-    setupAutoPlay(containerSel, activeClassName);
+    setupAutoPlay(containerSel, activeClassName, config.enableOverlay);
+  }
+
+  // Enable lazy loading observer if enabled
+  if (config.enableLazyLoading) {
+    setupLazyLoading(containerSel, selector, config);
   }
 
   const total = batches.length;
+  isTranslating = true;
   console.log(`[LingoScript] Starting: ${total} batches, provider: ${config.llmProvider}`);
 
+  // Add cancel button
+  addCancelButton();
+
   for (let i = 0; i < batches.length; i++) {
+    // Check if user cancelled
+    if (shouldCancel) {
+      console.log('[LingoScript] Translation cancelled by user');
+      showLingoToast('❌ Đã dừng dịch', false);
+      break;
+    }
+
     setProgress(i, total);
     markLoading(batches[i]);
 
-    let retries = 0;
-    const maxRetries = 3;
-    let success = false;
-
-    while (retries < maxRetries && !success) {
-      try {
-        const translated = await translator.translateChunk(
-          batches[i],
-          config.llmApiKey,
-          config.targetLanguage || 'Vietnamese',
-          config.resolvedOllamaModel
-        );
-        unmarkLoading(batches[i]);
-        replaceText(translated, config.targetLanguage || 'Vietnamese');
-        success = true;
-      } catch (err) {
-        retries++;
-        console.warn(`[LingoScript] Batch ${i + 1}/${total} attempt ${retries} failed:`, err.message);
-        
-        if (retries < maxRetries) {
-          // Exponential backoff: 1s, 2s, 4s
-          const delay = Math.pow(2, retries - 1) * 1000;
-          console.log(`[LingoScript] Retrying in ${delay}ms...`);
-          await new Promise(r => setTimeout(r, delay));
-        } else {
-          // Mark failed segments with red color
-          unmarkLoading(batches[i]);
-          batches[i].forEach(({ id }) => {
-            const el = nodeMap.get(id);
-            if (el) {
-              el.style.color = '#e74c3c';
-              el.title = '❌ Dịch thất bại - Click để thử lại';
+    try {
+      const translated = await translateBatch(batches[i], config);
+      unmarkLoading(batches[i]);
+      replaceText(translated, config.targetLanguage || 'Vietnamese', config.bilingualMode);
+    } catch (err) {
+      unmarkLoading(batches[i]);
+      console.error(`[LingoScript] Batch ${i + 1}/${total} failed:`, err.message);
+      
+      // Mark failed segments with red color for manual retry
+      batches[i].forEach(({ id, text }) => {
+        const el = nodeMap.get(id);
+        if (el && !el.dataset.lingoTranslated) {
+          el.style.color = '#e74c3c';
+          el.title = '❌ Dịch thất bại - Click để thử lại';
+          el.style.cursor = 'pointer';
+          el.onclick = async () => {
+            el.style.opacity = '0.4';
+            el.style.cursor = 'wait';
+            try {
+              const retryConfig = await new Promise(resolve => {
+                chrome.storage.sync.get([
+                  'llmProvider', 'llmApiKey', 'targetLanguage', 
+                  'ollamaModel', 'ollamaModelCustom', 'customSystemPrompt', 'bilingualMode'
+                ], resolve);
+              });
+              retryConfig.resolvedOllamaModel = retryConfig.ollamaModel === 'custom'
+                ? (retryConfig.ollamaModelCustom || 'gpt-oss:120b')
+                : (retryConfig.ollamaModel || 'gpt-oss:120b');
+              
+              const retryTranslated = await translateBatch([{ id, text }], retryConfig);
+              el.style.opacity = '1';
+              el.style.cursor = '';
+              replaceText(retryTranslated, retryConfig.targetLanguage || 'Vietnamese', retryConfig.bilingualMode);
+            } catch (e) {
+              el.style.opacity = '1';
               el.style.cursor = 'pointer';
-              el.onclick = () => {
-                chrome.storage.sync.get(['llmProvider', 'llmApiKey', 'targetLanguage', 'ollamaModelCustom', 'ollamaModel'], async (cfg) => {
-                  el.style.opacity = '0.4';
-                  try {
-                    const provider = LLM[(cfg.llmProvider || 'gemini').trim()];
-                    const translated = await provider.translateChunk(
-                      [{ id, text: el.innerText.trim() }],
-                      cfg.llmApiKey,
-                      cfg.targetLanguage || 'Vietnamese',
-                      cfg.ollamaModel === 'custom' ? cfg.ollamaModelCustom : cfg.ollamaModel
-                    );
-                    el.style.opacity = '1';
-                    replaceText(translated, cfg.targetLanguage || 'Vietnamese');
-                  } catch (e) {
-                    el.style.opacity = '1';
-                    showLingoToast('Retry thất bại: ' + e.message, true);
-                  }
-                });
-              };
+              showLingoToast('Retry thất bại: ' + e.message, true);
             }
-          });
-          console.error(`[LingoScript] Batch ${i + 1}/${total} failed after ${maxRetries} attempts`);
-          showLingoToast(`⚠️ Batch ${i + 1}/${total} thất bại - Segments màu đỏ click để retry`, true);
+          };
         }
-      }
+      });
+      showLingoToast(`⚠️ Batch ${i + 1}/${total} thất bại - Segments màu đỏ click để retry`, true);
     }
 
     // Rate-limit: small delay between requests (skip after last batch)
@@ -647,6 +753,9 @@ async function initiateTranslation() {
       await new Promise(r => setTimeout(r, 800));
     }
   }
+
+  isTranslating = false;
+  removeCancelButton();
 
   setProgress(total, total);
   console.log('[LingoScript] ✓ Translation complete!');

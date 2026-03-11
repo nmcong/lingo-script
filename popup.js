@@ -23,9 +23,9 @@ const PRESETS = {
     container: '.transcript-body'
   },
   udemy: {
-    selector: '.transcript--cue-text--2DisO',
-    activeClass: 'transcript--is-active--2BPqe',
-    container: '.transcript--container--3PBTk'
+    selector: '[data-purpose="cue-text"]',
+    activeClass: '',
+    container: '[data-purpose="sidebar-content"]'
   },
   edx: {
     selector: '.subtitles-menu li span, .transcript-line',
@@ -54,9 +54,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const platformPreset     = $('platformPreset');
   const transcriptSelector = $('transcriptSelector');
   const activeClass        = $('activeClass');
+  const customSystemPrompt = $('customSystemPrompt');
+  const bilingualMode      = $('bilingualMode');
+  const enableLazyLoading  = $('enableLazyLoading');
+  const enableOverlay      = $('enableOverlay');
   const saveBtn            = $('saveBtn');
   const translateBtn       = $('translateBtn');
+  const testConnBtn        = $('testConnBtn');
+  const clearCacheBtn      = $('clearCacheBtn');
   const status             = $('status');
+  const testStatus         = $('testStatus');
+  const cacheInfo          = $('cacheInfo');
 
   // Show/hide Ollama model field
   function applyLLMProvider(val) {
@@ -87,12 +95,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
   platformPreset.addEventListener('change', () => applyPreset(platformPreset.value));
 
+  // ── Test Connection ────────────────────────────────────────────────────────
+  testConnBtn.addEventListener('click', () => {
+    const provider = llmProvider.value;
+    const apiKey = llmApiKey.value.trim();
+    const model = ollamaModel.value === 'custom' ? ollamaModelCustom.value.trim() : ollamaModel.value;
+
+    if (!apiKey) {
+      testStatus.textContent = '⚠️ Nhập API Key trước';
+      testStatus.style.color = '#e94560';
+      return;
+    }
+
+    testConnBtn.disabled = true;
+    testConnBtn.textContent = '⏳';
+    testStatus.textContent = 'Đang kiểm tra...';
+    testStatus.style.color = '#8898aa';
+
+    chrome.runtime.sendMessage({
+      action: 'TEST_CONNECTION',
+      provider,
+      apiKey,
+      model
+    }, (response) => {
+      testConnBtn.disabled = false;
+      testConnBtn.textContent = '🔌';
+
+      if (response && response.success) {
+        testStatus.textContent = '✅ Kết nối thành công!';
+        testStatus.style.color = '#28a745';
+      } else {
+        testStatus.textContent = '❌ ' + (response?.error || 'Kết nối thất bại');
+        testStatus.style.color = '#e94560';
+      }
+
+      setTimeout(() => { testStatus.textContent = ''; }, 5000);
+    });
+  });
+
+  // ── Clear Cache ────────────────────────────────────────────────────────────
+  clearCacheBtn.addEventListener('click', () => {
+    if (!confirm('Xóa toàn bộ cache đã dịch?')) return;
+
+    chrome.runtime.sendMessage({ action: 'CLEAR_CACHE' }, (response) => {
+      if (response && response.success) {
+        showStatus('✅ Đã xóa cache!', false);
+        loadCacheStats();
+      } else {
+        showStatus('❌ Lỗi xóa cache', true);
+      }
+    });
+  });
+
+  // Load cache stats
+  function loadCacheStats() {
+    chrome.runtime.sendMessage({ action: 'GET_CACHE_STATS' }, (response) => {
+      if (response && response.count !== undefined) {
+        cacheInfo.textContent = `💾 ${response.count} đoạn`;
+      }
+    });
+  }
+  loadCacheStats();
+
   // ── Load saved config ──────────────────────────────────────────────────────
   chrome.storage.sync.get([
     'llmProvider', 'llmApiKey', 'targetLanguage',
     'ollamaModel', 'ollamaModelCustom',
     'ttsProvider', 'ttsApiKey', 'isAutoPlayEnabled',
-    'platformPreset', 'transcriptSelector', 'activeClass'
+    'platformPreset', 'transcriptSelector', 'activeClass',
+    'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay'
   ], (result) => {
     if (result.llmProvider)    llmProvider.value = result.llmProvider;
     if (result.llmApiKey)      llmApiKey.value   = result.llmApiKey;
@@ -111,6 +182,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (result.ttsApiKey) ttsApiKey.value = result.ttsApiKey;
     autoPlay.checked = result.isAutoPlayEnabled || false;
+
+    if (result.customSystemPrompt) customSystemPrompt.value = result.customSystemPrompt;
+    bilingualMode.checked = result.bilingualMode || false;
+    enableLazyLoading.checked = result.enableLazyLoading || false;
+    enableOverlay.checked = result.enableOverlay || false;
 
     const platform = result.platformPreset || 'youtube';
     platformPreset.value = platform;
@@ -169,7 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
       platformPreset:     platform,
       transcriptSelector: selectorVal,
       activeClass:        activeClassVal,
-      containerSelector:  containerVal
+      containerSelector:  containerVal,
+      customSystemPrompt: customSystemPrompt.value.trim(),
+      bilingualMode:      bilingualMode.checked,
+      enableLazyLoading:  enableLazyLoading.checked,
+      enableOverlay:      enableOverlay.checked
     }, () => showStatus('✓ Đã lưu thành công!', false));
   });
 

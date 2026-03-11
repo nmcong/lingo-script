@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LingoScript",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Dịch transcript trực tiếp trên trang web với AI (Gemini, OpenAI, Claude, Ollama)",
   "permissions": [
     "storage",
@@ -15,6 +15,9 @@
     "https://api.anthropic.com/*",
     "https://ollama.com/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "LingoScript"
