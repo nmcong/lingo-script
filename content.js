@@ -272,6 +272,26 @@ function createFloatingBubble() {
   iconSpan.style.cssText = 'pointer-events:none;display:flex;align-items:center;justify-content:center;';
   floatingBubble.appendChild(iconSpan);
   
+  // Progress text overlay (displayed in center of bubble)
+  const progressText = document.createElement('div');
+  progressText.id = 'lingo-bubble-progress';
+  progressText.style.cssText = [
+    'position:absolute',
+    'top:50%',
+    'left:50%',
+    'transform:translate(-50%, -50%)',
+    'font-size:10px',
+    'font-weight:700',
+    'color:#fff',
+    'text-align:center',
+    'pointer-events:none',
+    'display:none',
+    'text-shadow:0 1px 3px rgba(0,0,0,0.5)',
+    'line-height:1.2',
+    'white-space:nowrap'
+  ].join(';');
+  floatingBubble.appendChild(progressText);
+  
   floatingBubble.title = 'LingoScript Control';
 
   // Message bubble (tooltip) - for transcript text display
@@ -335,9 +355,6 @@ function createFloatingBubble() {
       <button id="lingo-view-summary-btn" style="padding:8px 12px;background:#17a2b8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none;align-items:center;justify-content:center;gap:6px;">
         <i data-feather="eye" style="width:14px;height:14px;"></i> Xem tóm tắt
       </button>
-      <div id="lingo-progress-text" style="font-size:11px;color:#8898aa;text-align:center;margin-top:4px;display:none;">
-        0/0
-      </div>
     </div>
   `;
   floatingBubble.appendChild(controlPanel);
@@ -490,32 +507,32 @@ function updateBubbleState(state) {
   const pauseBtn = bubble.querySelector('#lingo-pause-btn');
   const resumeBtn = bubble.querySelector('#lingo-resume-btn');
   const stopBtn = bubble.querySelector('#lingo-stop-btn');
-  const progressText = bubble.querySelector('#lingo-progress-text');
+  const bubbleProgress = bubble.querySelector('#lingo-bubble-progress');
 
   // Reset all buttons
   startBtn.style.display = 'none';
   pauseBtn.style.display = 'none';
   resumeBtn.style.display = 'none';
   stopBtn.style.display = 'none';
-  progressText.style.display = 'none';
 
   switch (state) {
     case 'idle':
       startBtn.style.display = 'flex';
       icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
+      // Hide progress and restore icon opacity
+      if (bubbleProgress) bubbleProgress.style.display = 'none';
+      icon.style.opacity = '1';
       break;
     case 'translating':
       pauseBtn.style.display = 'flex';
       stopBtn.style.display = 'flex';
-      progressText.style.display = 'block';
       icon.innerHTML = '<i data-feather="refresh-cw" class="rotating" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #28a745, #20863a)';
       break;
     case 'paused':
       resumeBtn.style.display = 'flex';
       stopBtn.style.display = 'flex';
-      progressText.style.display = 'block';
       icon.innerHTML = '<i data-feather="pause-circle" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #ffc107, #e0a800)';
       break;
@@ -523,7 +540,9 @@ function updateBubbleState(state) {
       startBtn.style.display = 'flex';
       icon.innerHTML = '<i data-feather="check-circle" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #28a745, #20863a)';
-      showBubbleMessage('Dịch hoàn tất!', 3000);
+      // Hide progress and restore icon opacity
+      if (bubbleProgress) bubbleProgress.style.display = 'none';
+      icon.style.opacity = '1';
       setTimeout(() => {
         icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
         bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
@@ -534,6 +553,9 @@ function updateBubbleState(state) {
       startBtn.style.display = 'flex';
       icon.innerHTML = '<i data-feather="x-circle" style="width:24px;height:24px;"></i>';
       bubble.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+      // Hide progress and restore icon opacity
+      if (bubbleProgress) bubbleProgress.style.display = 'none';
+      icon.style.opacity = '1';
       setTimeout(() => {
         icon.innerHTML = '<i data-feather="globe" style="width:24px;height:24px;"></i>';
         bubble.style.background = 'linear-gradient(135deg, #e94560, #c73652)';
@@ -550,9 +572,18 @@ function updateBubbleState(state) {
 
 function updateBubbleProgress(current, total) {
   const bubble = floatingBubble || createFloatingBubble();
-  const progressText = bubble.querySelector('#lingo-progress-text');
+  const progressText = bubble.querySelector('#lingo-bubble-progress');
+  const icon = bubble.querySelector('#lingo-bubble-icon');
+  
   if (progressText) {
-    progressText.textContent = `${current}/${total}`;
+    if (current > 0 && total > 0) {
+      progressText.textContent = `${current}/${total}`;
+      progressText.style.display = 'block';
+      if (icon) icon.style.opacity = '0.3'; // Dim icon when showing progress
+    } else {
+      progressText.style.display = 'none';
+      if (icon) icon.style.opacity = '1';
+    }
   }
 }
 
@@ -1267,16 +1298,14 @@ function jumpToTimestamp(timestamp) {
   if (video) {
     video.currentTime = seconds;
     video.play();
-    showBubbleMessage(`Nhảy đến ${timestamp}`, 2000);
   } else {
     // Try to find and click transcript element with matching timestamp
     const transcriptEl = document.querySelector(`[data-lingo-timestamp="${timestamp}"]`);
     if (transcriptEl) {
       transcriptEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       transcriptEl.click();
-      showBubbleMessage(`Nhảy đến ${timestamp}`, 2000);
     } else {
-      showBubbleMessage('Không tìm thấy video hoặc timestamp', 3000);
+      console.warn('[LingoScript] Video or timestamp not found:', timestamp);
     }
   }
 }
@@ -1306,14 +1335,12 @@ function setupBubbleControls(batches, config) {
   pauseBtn.onclick = () => {
     isPaused = true;
     updateBubbleState('paused');
-    showBubbleMessage('Đã tạm dừng', 2000);
   };
 
   // Resume button
   resumeBtn.onclick = () => {
     isPaused = false;
     updateBubbleState('translating');
-    showBubbleMessage('Tiếp tục dịch...', 2000);
   };
 
   // Stop button
@@ -1321,18 +1348,16 @@ function setupBubbleControls(batches, config) {
     shouldCancel = true;
     isPaused = false;
     updateBubbleState('idle');
-    showBubbleMessage('Đang dừng...', 2000);
   };
 
   // Summarize button
   summarizeBtn.onclick = async () => {
     bubble.querySelector('#lingo-control-panel').style.display = 'none';
-    showBubbleMessage('Đang tóm tắt transcript...', 0);
     
     try {
       const allTranslatedElements = document.querySelectorAll('[data-lingo-translated="true"]');
       if (allTranslatedElements.length === 0) {
-        showBubbleMessage('Chưa có transcript được dịch!', 3000);
+        console.warn('[LingoScript] No translated transcript for summary');
         return;
       }
 
@@ -1345,7 +1370,7 @@ function setupBubbleControls(batches, config) {
         .filter(item => item.text && item.text.length > 0);
 
       if (items.length === 0) {
-        showBubbleMessage('Transcript quá ngắn để tóm tắt!', 3000);
+        console.warn('[LingoScript] Transcript too short to summarize');
         return;
       }
 
@@ -1391,7 +1416,6 @@ function setupBubbleControls(batches, config) {
         viewSummaryBtn.style.display = 'flex';
       }
     } catch (err) {
-      showBubbleMessage('Lỗi: ' + err.message, 5000);
       console.error('[LingoScript] Summarize failed:', err);
     }
   };
@@ -1418,7 +1442,7 @@ function setupBubbleControls(batches, config) {
         
         showSummaryPanel(result.summary);
       } catch (err) {
-        showBubbleMessage(err.message, 3000);
+        console.error('[LingoScript] Failed to load saved summary:', err);
       }
     };
     
@@ -1459,12 +1483,11 @@ function setupRetryHandler(element, id, text, config) {
       element.style.opacity = '1';
       element.style.cursor = '';
       replaceText(retryTranslated, retryConfig.targetLanguage || 'Vietnamese', retryConfig.bilingualMode);
-      showBubbleMessage('Retry thành công!', 2000);
     } catch (e) {
       element.style.opacity = '1';
       element.style.cursor = 'pointer';
       addSegmentBadge(element, 'error');
-      showBubbleMessage('Retry thất bại', 2000);
+      console.error('[LingoScript] Retry failed:', e);
     }
   };
 }
@@ -1566,7 +1589,6 @@ async function initiateTranslation(mode = 'batch') {
   const bubble = createFloatingBubble();
   updateBubbleState('translating');
   updateBubbleProgress(0, totalBatches);
-  showBubbleMessage('Bắt đầu dịch...', 2000);
 
   // Setup button handlers
   setupBubbleControls(batches, config);
@@ -1575,7 +1597,6 @@ async function initiateTranslation(mode = 'batch') {
   if (config.singleBatchMode && batches.length > 1) {
     const allItems = batches.flat();
     markLoading(allItems, 'translating');
-    showBubbleMessage(`Đang gửi ${allItems.length} đoạn cho AI...`, 0);
 
     try {
       const translated = await translateBatch(allItems, config);
@@ -1596,7 +1617,6 @@ async function initiateTranslation(mode = 'batch') {
         }
       });
       updateBubbleState('error');
-      showBubbleMessage('Dịch thất bại!', 3000);
     }
     
     isTranslating = false;
@@ -1616,14 +1636,12 @@ async function initiateTranslation(mode = 'batch') {
     if (shouldCancel) {
       console.log('[LingoScript] Translation cancelled by user');
       updateBubbleState('idle');
-      showBubbleMessage('Đã dừng dịch', 2000);
       break;
     }
 
     setProgress(i, totalBatches);
     updateBubbleProgress(i + 1, totalBatches);
     markLoading(batches[i], 'translating');
-    showBubbleMessage(`Đang dịch batch ${i + 1}/${totalBatches}...`, 0);
 
     try {
       const translated = await translateBatch(batches[i], config);
@@ -1641,7 +1659,6 @@ async function initiateTranslation(mode = 'batch') {
           setupRetryHandler(el, id, text, config);
         }
       });
-      showBubbleMessage(`Batch ${i + 1} thất bại`, 2000);
     }
 
     // Rate-limit delay
