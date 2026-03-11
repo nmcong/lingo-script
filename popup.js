@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const bilingualMode      = $('bilingualMode');
   const enableLazyLoading  = $('enableLazyLoading');
   const enableOverlay      = $('enableOverlay');
+  const enableBubbleText   = $('enableBubbleText');
   const singleBatchMode    = $('singleBatchMode');
   const saveBtn            = $('saveBtn');
   const translateBtn       = $('translateBtn');
@@ -164,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'ollamaModel', 'ollamaModelCustom',
     'ttsProvider', 'ttsApiKey', 'isAutoPlayEnabled',
     'platformPreset', 'transcriptSelector', 'activeClass',
-    'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay', 'singleBatchMode'
+    'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay', 'enableBubbleText', 'singleBatchMode'
   ], (result) => {
     if (result.llmProvider)    llmProvider.value = result.llmProvider;
     if (result.llmApiKey)      llmApiKey.value   = result.llmApiKey;
@@ -188,6 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bilingualMode.checked = result.bilingualMode || false;
     enableLazyLoading.checked = result.enableLazyLoading || false;
     enableOverlay.checked = result.enableOverlay || false;
+    enableBubbleText.checked = result.enableBubbleText !== false; // default true
     singleBatchMode.checked = result.singleBatchMode || false;
 
     const platform = result.platformPreset || 'youtube';
@@ -252,6 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
       bilingualMode:      bilingualMode.checked,
       enableLazyLoading:  enableLazyLoading.checked,
       enableOverlay:      enableOverlay.checked,
+      enableBubbleText:   enableBubbleText.checked,
       singleBatchMode:    singleBatchMode.checked
     }, () => showStatus('✓ Đã lưu thành công!', false));
   });

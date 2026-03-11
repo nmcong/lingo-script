@@ -208,6 +208,8 @@ function collectAndChunk(selector, chunkSize = 20) {
 let floatingBubble = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
+let dragStartPos = { x: 0, y: 0 };
+let hasMoved = false;
 
 function createFloatingBubble() {
   if (floatingBubble) return floatingBubble;
@@ -243,7 +245,7 @@ function createFloatingBubble() {
   
   floatingBubble.title = 'LingoScript Control';
 
-  // Message bubble (tooltip)
+  // Message bubble (tooltip) - for transcript text display
   const messageBubble = document.createElement('div');
   messageBubble.id = 'lingo-bubble-message';
   messageBubble.style.cssText = [
@@ -253,15 +255,19 @@ function createFloatingBubble() {
     'transform:translateY(-50%)',
     'background:#1a1a2e',
     'color:#e0e0e0',
-    'padding:10px 14px',
+    'padding:12px 16px',
     'border-radius:8px',
-    'font-size:13px',
-    'white-space:nowrap',
-    'box-shadow:0 2px 10px rgba(0,0,0,0.3)',
+    'font-size:14px',
+    'line-height:1.5',
+    'white-space:normal',
+    'word-wrap:break-word',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.4)',
     'display:none',
-    'max-width:250px',
+    'max-width:400px',
+    'min-width:200px',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    'border:1px solid #e94560'
+    'border:2px solid #e94560',
+    'z-index:2147483648'
   ].join(';');
   floatingBubble.appendChild(messageBubble);
 
@@ -303,10 +309,14 @@ function createFloatingBubble() {
   `;
   floatingBubble.appendChild(controlPanel);
 
-  // Drag & Drop functionality
+  // Drag & Drop functionality with move detection
   floatingBubble.addEventListener('mousedown', (e) => {
-    if (e.target === floatingBubble) {
+    if (e.target === floatingBubble || e.target.id === 'lingo-bubble-icon') {
       isDragging = true;
+      hasMoved = false;
+      dragStartPos.x = e.clientX;
+      dragStartPos.y = e.clientY;
+      
       const rect = floatingBubble.getBoundingClientRect();
       dragOffset.x = e.clientX - rect.left;
       dragOffset.y = e.clientY - rect.top;
@@ -317,12 +327,19 @@ function createFloatingBubble() {
 
   document.addEventListener('mousemove', (e) => {
     if (isDragging) {
-      const x = e.clientX - dragOffset.x;
-      const y = e.clientY - dragOffset.y;
-      floatingBubble.style.left = x + 'px';
-      floatingBubble.style.top = y + 'px';
-      floatingBubble.style.right = 'auto';
-      floatingBubble.style.bottom = 'auto';
+      const deltaX = Math.abs(e.clientX - dragStartPos.x);
+      const deltaY = Math.abs(e.clientY - dragStartPos.y);
+      
+      // If moved more than 5px, consider it a drag (not a click)
+      if (deltaX > 5 || deltaY > 5) {
+        hasMoved = true;
+        const x = e.clientX - dragOffset.x;
+        const y = e.clientY - dragOffset.y;
+        floatingBubble.style.left = x + 'px';
+        floatingBubble.style.top = y + 'px';
+        floatingBubble.style.right = 'auto';
+        floatingBubble.style.bottom = 'auto';
+      }
     }
   });
 
@@ -334,13 +351,14 @@ function createFloatingBubble() {
     }
   });
 
-  // Click to toggle control panel
+  // Click to toggle control panel (only if not dragged)
   floatingBubble.addEventListener('click', (e) => {
-    if (e.target === floatingBubble && !isDragging) {
+    if ((e.target === floatingBubble || e.target.id === 'lingo-bubble-icon') && !hasMoved) {
       const panel = controlPanel;
       if (panel.style.display === 'none') {
         panel.style.display = 'block';
-        setTimeout(() => messageBubble.style.display = 'none', 100);
+        // Hide message bubble when panel opens
+        hideBubbleMessage();
       } else {
         panel.style.display = 'none';
       }
@@ -366,16 +384,57 @@ function createFloatingBubble() {
   return floatingBubble;
 }
 
-function showBubbleMessage(text, duration = 3000) {
+function showBubbleMessage(text, duration = 3000, isTranscript = false) {
   const bubble = floatingBubble || createFloatingBubble();
   const message = bubble.querySelector('#lingo-bubble-message');
+  
+  // Style differently for transcript vs status messages
+  if (isTranscript) {
+    message.style.background = '#2c3e50';
+    message.style.borderColor = '#3498db';
+    message.style.fontSize = '15px';
+    message.style.lineHeight = '1.6';
+    message.style.maxWidth = '450px';
+    message.style.padding = '14px 18px';
+  } else {
+    message.style.background = '#1a1a2e';
+    message.style.borderColor = '#e94560';
+    message.style.fontSize = '13px';
+    message.style.lineHeight = '1.5';
+    message.style.maxWidth = '300px';
+    message.style.padding = '10px 14px';
+  }
+  
   message.textContent = text;
   message.style.display = 'block';
+  message.style.opacity = '0';
+  message.style.transition = 'opacity 0.3s ease';
+  
+  // Fade in
+  setTimeout(() => {
+    message.style.opacity = '1';
+  }, 10);
   
   if (duration > 0) {
     setTimeout(() => {
-      message.style.display = 'none';
+      message.style.opacity = '0';
+      setTimeout(() => {
+        message.style.display = 'none';
+      }, 300);
     }, duration);
+  }
+}
+
+function hideBubbleMessage() {
+  const bubble = floatingBubble;
+  if (!bubble) return;
+  
+  const message = bubble.querySelector('#lingo-bubble-message');
+  if (message && message.style.display !== 'none') {
+    message.style.opacity = '0';
+    setTimeout(() => {
+      message.style.display = 'none';
+    }, 300);
   }
 }
 
@@ -870,7 +929,7 @@ function setupLazyLoading(containerSelector, selector, config) {
 
 let autoPlayObserver = null;
 
-function setupAutoPlay(containerSelector, activeClass, enableOverlay = false) {
+function setupAutoPlay(containerSelector, activeClass, enableOverlay = false, enableBubbleText = true) {
   if (autoPlayObserver) { autoPlayObserver.disconnect(); autoPlayObserver = null; }
   if (!containerSelector) return;
 
@@ -919,7 +978,12 @@ function setupAutoPlay(containerSelector, activeClass, enableOverlay = false) {
         if (translatedText) {
           console.log('[LingoScript] Auto-play:', translatedText.slice(0, 50) + '...');
 
-          // Show overlay subtitle
+          // Show in bubble message if enabled
+          if (enableBubbleText) {
+            showBubbleMessage(translatedText, 0, true); // duration=0 means persistent until next cue
+          }
+
+          // Show overlay subtitle if enabled
           if (enableOverlay) {
             showOverlaySubtitle(translatedText);
           }
@@ -1030,7 +1094,7 @@ async function initiateTranslation(mode = 'batch') {
       'ollamaModel', 'ollamaModelCustom',
       'ttsProvider', 'ttsApiKey', 'isAutoPlayEnabled',
       'transcriptSelector', 'activeClass', 'containerSelector',
-      'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay',
+      'customSystemPrompt', 'bilingualMode', 'enableLazyLoading', 'enableOverlay', 'enableBubbleText',
       'singleBatchMode'
     ], resolve);
   });
@@ -1096,7 +1160,7 @@ async function initiateTranslation(mode = 'batch') {
 
   if (isAutoPlay) {
     showVolumeWarning();
-    setupAutoPlay(containerSel, activeClassName, config.enableOverlay);
+    setupAutoPlay(containerSel, activeClassName, config.enableOverlay, config.enableBubbleText !== false);
   }
 
   // Enable lazy loading observer if enabled
